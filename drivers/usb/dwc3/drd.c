@@ -462,6 +462,9 @@ static int dwc3_usb_role_switch_set(struct usb_role_switch *sw,
 	}
 
 	dwc3_set_mode(dwc, mode);
+	if (dwc->role_sw_relay)
+		usb_role_switch_set_role(dwc->role_sw_relay, role);
+
 	return 0;
 }
 
@@ -526,6 +529,10 @@ static int dwc3_setup_role_switch(struct dwc3 *dwc)
 		}
 	}
 
+	dwc->role_sw_relay = usb_role_switch_get(dwc->dev);
+	if (IS_ERR(dwc->role_sw_relay))
+		return PTR_ERR(dwc->role_sw_relay);
+
 	dwc3_set_mode(dwc, mode);
 	return 0;
 }
@@ -587,6 +594,9 @@ int dwc3_drd_init(struct dwc3 *dwc)
 void dwc3_drd_exit(struct dwc3 *dwc)
 {
 	unsigned long flags;
+
+	if (dwc->role_sw_relay)
+		usb_role_switch_put(dwc->role_sw_relay);
 
 	if (dwc->role_sw)
 		usb_role_switch_unregister(dwc->role_sw);
