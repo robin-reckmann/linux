@@ -351,3 +351,16 @@
 &uart9 {
 	status = "okay";
 };
+
+&ufs_mem_phy {
+	status = "okay";
+
+	vdda-phy-supply = <&vreg_l1a_0p875>;
+	vdda-pll-supply = <&vreg_l26a_1p2>;
+	vdda-phy-max-microamp = <62900>;
+	vdda-pll-max-microamp = <18300>;
+};
+
+&ufs_mem_hc {
+	status = "okay";
+};
