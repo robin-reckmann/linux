@@ -8,6 +8,13 @@
 	compatible = "comma,comma3", "qcom,sdm845";
 
 	aliases {
+		/delete-property/ i2c4;
+		/delete-property/ i2c5;
+		/delete-property/ i2c10;
+		i2c0 = &i2c10;
+		i2c1 = &i2c4;
+		i2c2 = &i2c5;
+
 		serial0 = &uart9;
 	};
 
@@ -344,6 +351,37 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+/* i2c-1 */
+/* BMX055_MAGN   0x10 */
+/* BMX055_ACCEL  0x18 */
+/* MMC5603NJ     0x30 */
+/* BMX055_GYRO   0x68 */
+/* LSM6DS3_ACCEL 0x6A */
+&i2c4 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+/* i2c-2 */
+/* TOUCH_PANEL   0x17 */
+/* RPR-0521RS    0x38 */
+&i2c5 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+/* i2c-0 */
+/* MAX98089      0x10 */
+/* INA230        0x40 */
+&i2c10 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&qupv3_id_0 {
+	status = "okay";
+};
+
 &qupv3_id_1 {
 	status = "okay";
 };
@@ -363,4 +401,12 @@
 
 &ufs_mem_hc {
 	status = "okay";
+};
+
+&vreg_l19a_3p0 {
+  regulator-always-on;
+};
+
+&vreg_lvs1a_1p8 {
+  regulator-always-on;
 };
