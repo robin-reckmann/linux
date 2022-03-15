@@ -1,7 +1,9 @@
 /dts-v1/;
 
+#include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sdm845.dtsi"
+#include "pm8998.dtsi"
 
 / {
 	model = "comma.ai comma three";
@@ -13,7 +15,8 @@
 		/delete-property/ i2c10;
 		i2c0 = &i2c10;
 		i2c1 = &i2c4;
-		i2c2 = &i2c5;
+		/*i2c2 = &i2c5;*/
+		i2c2 = &i2c_gpio;
 
 		serial0 = &uart9;
 	};
@@ -44,6 +47,60 @@
 		regulator-boot-on;
 
 		vin-supply = <&vph_pwr>;
+	};
+
+	main5v: main5v {
+		status = "okay";
+		compatible = "regulator-fixed";
+		regulator-name = "main5v";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		gpio = <&tlmm 25 0>;
+		enable-active-high;
+		regulator-always-on;
+	};
+
+	tp3v3: tp3v3 {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "tp3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+
+		gpio = <&pm8998_gpio 10 0>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	/* TODO: Remove this after i2c5 controller is fixed. */
+	i2c_gpio: i2c@0 {
+		status = "okay";
+
+		compatible = "i2c-gpio";
+		sda-gpios = <&tlmm 85 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&tlmm 86 (GPIO_ACTIVE_HIGH|GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <2>;	/* ~100 kHz */
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		samsung-ts@17 {
+			compatible = "samsung_i2c_touchpanel";
+			reg = <0x17>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <125 0x2002>;
+			interrupt-gpios = <&tlmm 125 0x2002>;
+			reset-gpios = <&tlmm 104 0>;
+			ta-gpios = <&tlmm 128 0>;
+			vdd-supply = <&tp3v3>;
+		};
+
+		rpr0521@38 {
+			compatible = "rpr0521";
+			reg = <0x38>;
+		};
+
 	};
 };
 
@@ -365,9 +422,26 @@
 /* i2c-2 */
 /* TOUCH_PANEL   0x17 */
 /* RPR-0521RS    0x38 */
+/* TODO: Make i2c5 work instead of gpio bitbanging */
 &i2c5 {
-	status = "okay";
+	status = "disabled";
 	clock-frequency = <100000>;
+
+	samsung-ts@17 {
+		compatible = "samsung_i2c_touchpanel";
+		reg = <0x17>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <125 0x2002>;
+		interrupt-gpios = <&tlmm 125 0x2002>;
+		reset-gpios = <&tlmm 104 0>;
+		ta-gpios = <&tlmm 128 0>;
+		vdd-supply = <&tp3v3>;
+	};
+
+	rpr0521@38 {
+		compatible = "rpr0521";
+		reg = <0x38>;
+	};
 };
 
 /* i2c-0 */
@@ -376,6 +450,13 @@
 &i2c10 {
 	status = "okay";
 	clock-frequency = <100000>;
+
+	ti_ina231@40 {
+		compatible = "ti,ina231";
+		reg = <0x40>;
+		/* value is 30mOhm, measured in uohms */
+		shunt-resistor = <30000>;
+	};
 };
 
 &qupv3_id_0 {
