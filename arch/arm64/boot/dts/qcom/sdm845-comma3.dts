@@ -408,6 +408,10 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
 /* i2c-1 */
 /* BMX055_MAGN   0x10 */
 /* BMX055_ACCEL  0x18 */
@@ -422,9 +426,8 @@
 /* i2c-2 */
 /* TOUCH_PANEL   0x17 */
 /* RPR-0521RS    0x38 */
-/* TODO: Make i2c5 work instead of gpio bitbanging */
 &i2c5 {
-	status = "disabled";
+	status = "okay";
 	clock-frequency = <100000>;
 
 	samsung-ts@17 {
