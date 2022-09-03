@@ -351,6 +351,10 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
 /* i2c-1 */
 /* BMX055_MAGN   0x10 */
 /* BMX055_ACCEL  0x18 */
