@@ -1379,4 +1379,14 @@ config TOUCHSCREEN_ZINITIX
 	  To compile this driver as a module, choose M here: the
 	  module will be called zinitix.
 
+config TOUCHSCREEN_SAMSUNG
+	tristate "Samsung touchpanel CHIPSET"
+	depends on I2C
+	help
+	  Say Y here if you have a Samsung touchpanel,
+	  like the one on the Huawei Mate 10 Pro replacement screens.
+	  Written/hacked by comma, so no guarantees!
+
+	  If unsure, say N. Unless on Tici, then say Y!
+
 endif
