@@ -2,6 +2,7 @@
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sdm845.dtsi"
+#include "pm8998.dtsi"
 
 / {
 	model = "comma.ai comma three";
@@ -44,6 +45,19 @@
 		regulator-boot-on;
 
 		vin-supply = <&vph_pwr>;
+	};
+
+	tp3v3: tp3v3 {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "tp3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+
+		gpio = <&pm8998_gpio 10 0>;
+		regulator-boot-on;
+		regulator-always-on;
 	};
 };
 
@@ -372,6 +386,17 @@
 &i2c5 {
 	status = "okay";
 	clock-frequency = <100000>;
+
+	samsung-ts@17 {
+		compatible = "samsung_i2c_touchpanel";
+		reg = <0x17>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <125 0x2002>;
+		interrupt-gpios = <&tlmm 125 0x2002>;
+		reset-gpios = <&tlmm 104 0>;
+		ta-gpios = <&tlmm 128 0>;
+		vdd-supply = <&tp3v3>;
+	};
 };
 
 /* i2c-0 */
