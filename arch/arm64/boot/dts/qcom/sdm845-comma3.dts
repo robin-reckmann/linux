@@ -383,6 +383,16 @@
 	clock-frequency = <100000>;
 };
 
+&pmi8998_typec {
+	status = "disable";
+
+	connector {
+		compatible = "usb-c-connector";
+		power-role = "dual";
+		data-role = "dual";
+	};
+};
+
 &pmi8998_vbus {
 	status = "okay";
 };
