@@ -2,6 +2,7 @@
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sdm845.dtsi"
+#include "pmi8998.dtsi"
 
 / {
 	model = "comma.ai comma three";
@@ -380,6 +381,10 @@
 &i2c10 {
 	status = "okay";
 	clock-frequency = <100000>;
+};
+
+&pmi8998_vbus {
+	status = "okay";
 };
 
 &qupv3_id_0 {
