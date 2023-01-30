@@ -13,7 +13,12 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/regmap.h>
+#include <soc/qcom/qcom-spmi-pmic.h>
 
+#define OTG_STATUS_REG			0x09
+#define BOOST_SOFTSTART_DONE_BIT	BIT(3)
+#define OTG_STATE_MASK			GENMASK(2, 0)
+#define OTG_STATE_ENABLED		0x2
 #define CMD_OTG				0x40
 #define OTG_EN				BIT(0)
 #define OTG_CURRENT_LIMIT_CFG		0x52
@@ -21,14 +26,34 @@
 #define OTG_CFG				0x53
 #define OTG_EN_SRC_CFG			BIT(1)
 
+#define HAS_STATUS_REG true
+
 static const unsigned int curr_table[] = {
 	500000, 1000000, 1500000, 2000000, 2500000, 3000000,
 };
 
+static int qcom_usb_vbus_regulator_is_enabled(struct regulator_dev *rdev)
+{
+	int ret;
+	unsigned int val;
+	// FIXME: urgh
+	u32 base = rdev->desc->enable_reg - CMD_OTG;
+
+	/* If enable time is not defined, fall back to the default impl */
+	if (!rdev->desc->enable_time)
+		return regulator_is_enabled_regmap(rdev);
+
+	ret = regmap_read(rdev->regmap, base + OTG_STATUS_REG, &val);
+	if (ret < 0)
+		return ret;
+
+	return !!(val & OTG_STATE_ENABLED);
+}
+
 static const struct regulator_ops qcom_usb_vbus_reg_ops = {
 	.enable = regulator_enable_regmap,
 	.disable = regulator_disable_regmap,
-	.is_enabled = regulator_is_enabled_regmap,
+	.is_enabled = qcom_usb_vbus_regulator_is_enabled,
 	.get_current_limit = regulator_get_current_limit_regmap,
 	.set_current_limit = regulator_set_current_limit_regmap,
 };
@@ -51,6 +76,7 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	struct regulator_init_data *init_data;
 	int ret;
 	u32 base;
+	bool has_status_reg;
 
 	ret = of_property_read_u32(dev->of_node, "reg", &base);
 	if (ret < 0) {
@@ -64,6 +90,8 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
+	has_status_reg = (bool)device_get_match_data(dev);
+
 	init_data = of_get_regulator_init_data(dev, dev->of_node,
 					       &qcom_usb_vbus_rdesc);
 	if (!init_data)
@@ -73,6 +101,10 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	qcom_usb_vbus_rdesc.enable_mask = OTG_EN;
 	qcom_usb_vbus_rdesc.csel_reg = base + OTG_CURRENT_LIMIT_CFG;
 	qcom_usb_vbus_rdesc.csel_mask = OTG_CURRENT_LIMIT_MASK;
+	if (has_status_reg) {
+		qcom_usb_vbus_rdesc.enable_time = 250000; // 2.5ms
+		qcom_usb_vbus_rdesc.poll_enabled_time = 100; // 0.1ms
+	}
 	config.dev = dev;
 	config.init_data = init_data;
 	config.of_node = dev->of_node;
@@ -92,7 +124,8 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id qcom_usb_vbus_regulator_match[] = {
-	{ .compatible = "qcom,pm8150b-vbus-reg" },
+	{ .compatible = "qcom,pm8150b-vbus-reg", .data = NULL },
+	{ .compatible = "qcom,pmi8998-vbus-reg", .data = (void*)HAS_STATUS_REG },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, qcom_usb_vbus_regulator_match);
