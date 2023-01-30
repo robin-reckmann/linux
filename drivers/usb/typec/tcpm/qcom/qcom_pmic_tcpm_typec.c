@@ -17,18 +17,23 @@
 #include <linux/usb/typec_mux.h>
 #include <linux/workqueue.h>
 #include <dt-bindings/usb/typec/tcpm/qcom,pmic-usb-typec.h>
+#include <soc/qcom/qcom-spmi-pmic.h>
 #include "qcom_pmic_tcpm_typec.h"
+#include "qcom_pmic_tcpm_regs.h"
 
 #define PMIC_TYPEC_MAX_IRQS		0x08
 
 struct pmic_typec_irq_params {
 	int				virq;
 	char				*irq_name;
+	unsigned long			irq_flags;
 };
 
 struct pmic_typec_resources {
 	unsigned int			nr_irqs;
 	struct pmic_typec_irq_params	irq_params[PMIC_TYPEC_MAX_IRQS];
+	const struct qptc_regs 		*regs;
+	irq_handler_t			irq_handler;
 };
 
 struct pmic_typec_irq_data {
@@ -52,6 +57,10 @@ struct pmic_typec {
 	struct delayed_work		cc_debounce_dwork;
 
 	spinlock_t			lock;	/* Register atomicity */
+
+	struct qptc_regs		*regs;
+
+	enum qcom_pmic_subtype		subtype;
 };
 
 static const char * const typec_cc_status_name[] = {
@@ -74,21 +83,89 @@ static const char *cc_to_name(enum typec_cc_status cc)
 }
 
 static const char * const rp_sel_name[] = {
-	[TYPEC_SRC_RP_SEL_80UA]		= "Rp-def-80uA",
-	[TYPEC_SRC_RP_SEL_180UA]	= "Rp-1.5-180uA",
-	[TYPEC_SRC_RP_SEL_330UA]	= "Rp-3.0-330uA",
+	[SRC_RP_SEL_80UA_VAL]		= "Rp-def-80uA",
+	[SRC_RP_SEL_180UA_VAL]	= "Rp-1.5-180uA",
+	[SRC_RP_SEL_330UA_VAL]	= "Rp-3.0-330uA",
 };
 
 static const char *rp_sel_to_name(int rp_sel)
 {
-	if (rp_sel > TYPEC_SRC_RP_SEL_330UA)
+	if (rp_sel > SRC_RP_SEL_330UA_VAL)
 		return rp_unknown;
 
 	return rp_sel_name[rp_sel];
 }
 
-#define misc_to_cc(msic) !!(misc & CC_ORIENTATION) ? "cc1" : "cc2"
-#define misc_to_vconn(msic) !!(misc & CC_ORIENTATION) ? "cc2" : "cc1"
+static bool qptc_reg_valid(struct pmic_typec *pmic_typec, enum qcom_pmic_typec_reg reg_id)
+{
+	enum qcom_pmic_subtype subtype = pmic_typec->subtype;
+	bool valid;
+
+	if ((u32)reg_id >= pmic_typec->regs->n_regs)
+		return false;
+	
+	switch (reg_id) {
+	case VBUS_STATUS:
+		valid = subtype == PM8150B_SUBTYPE;
+		break;
+	default:
+		valid = true;
+		break;
+	}
+
+	return valid && pmic_typec->regs->regs[reg_id];
+}
+
+const struct qptc_reg *qptc_reg(struct pmic_typec *pmic_typec,
+				enum qcom_pmic_typec_reg reg_id)
+{
+	if (WARN_ON(!qptc_reg_valid(pmic_typec, reg_id)))
+		return NULL;
+
+	return pmic_typec->regs->regs[reg_id];
+}
+
+/*
+ * The interrupt configuration spans 2 registers, which interrupt is on
+ * which register varies across PMICs. This function takes a platform
+ * agnostic bitmask of interrupts (enum qcom_pmic_typec_intr_cfg_fields
+ * represents the bit positions)
+ * and generates the platform specific masks for each register
+ */
+static void qptc_intr_cfg(struct pmic_typec *pmic_typec, u32 intr_mask,
+			  u8 *intr_masks)
+{
+	const struct qptc_regs *regs = pmic_typec->regs;
+	enum qcom_pmic_typec_intr_cfg_fields field;
+	const struct qptc_reg *reg1, *reg2;
+	u32 intr_field[2] = {0, 0};
+	int i;
+
+	reg1 = qptc_reg(pmic_typec, INTR_1_CFG);
+	reg2 = qptc_reg(pmic_typec, INTR_2_CFG);
+
+	/* Figure out which fields are in which registers */
+	while (intr_mask) {
+		field = __ffs(intr_mask);
+		intr_mask &= ~((u32)field);
+
+		if (regs->intr_1_fmask & BIT(field))
+			intr_field[0] |= BIT(field);
+		else if (regs->intr_2_fmask & BIT(field))
+			intr_field[1] |= BIT(field);
+	}
+
+	for (i = 0; i < 2; i++) {
+		while (intr_field[i]) {
+			u8 intr_bit = __ffs(intr_field[i]);
+			intr_field[i] &= ~intr_bit;
+			intr_masks[i] |= intr_bit;
+		}
+	}
+}
+
+#define orient_to_cc(orientation) orientation ? "cc1" : "cc2"
+#define orient_to_vconn(orientation) orient_to_cc(!orientation)
 
 static void qcom_pmic_tcpm_typec_cc_debounce(struct work_struct *work)
 {
@@ -103,23 +180,47 @@ static void qcom_pmic_tcpm_typec_cc_debounce(struct work_struct *work)
 	dev_dbg(pmic_typec->dev, "Debounce cc complete\n");
 }
 
-static irqreturn_t pmic_typec_isr(int irq, void *dev_id)
+static irqreturn_t pmic_typec_isr_pmi8998(int irq, void *dev_id)
 {
 	struct pmic_typec_irq_data *irq_data = dev_id;
 	struct pmic_typec *pmic_typec = irq_data->pmic_typec;
-	u32 misc_stat;
 	bool vbus_change = false;
 	bool cc_change = false;
 	unsigned long flags;
-	int ret;
 
 	spin_lock_irqsave(&pmic_typec->lock, flags);
 
-	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG,
-			  &misc_stat);
-	if (ret)
-		goto done;
+	switch (irq_data->virq) {
+	case PMIC_TYPEC_VBUS_IRQ:
+		/* Incoming vbus assert/de-assert detect */
+		vbus_change = true;
+		break;
+	case PMIC_TYPEC_CC_STATE_IRQ:
+		if (!pmic_typec->debouncing_cc)
+			cc_change = true;
+		break;
+	}
+
+	spin_unlock_irqrestore(&pmic_typec->lock, flags);
+
+	if (vbus_change)
+		tcpm_vbus_change(pmic_typec->tcpm_port);
+
+	if (cc_change)
+		tcpm_cc_change(pmic_typec->tcpm_port);
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t pmic_typec_isr_pm8150b(int irq, void *dev_id)
+{
+	struct pmic_typec_irq_data *irq_data = dev_id;
+	struct pmic_typec *pmic_typec = irq_data->pmic_typec;
+	bool vbus_change = false;
+	bool cc_change = false;
+	unsigned long flags;
+
+	spin_lock_irqsave(&pmic_typec->lock, flags);
 
 	switch (irq_data->virq) {
 	case PMIC_TYPEC_VBUS_IRQ:
@@ -136,7 +237,6 @@ static irqreturn_t pmic_typec_isr(int irq, void *dev_id)
 		break;
 	}
 
-done:
 	spin_unlock_irqrestore(&pmic_typec->lock, flags);
 
 	if (vbus_change)
@@ -152,46 +252,58 @@ int qcom_pmic_tcpm_typec_get_vbus(struct pmic_typec *pmic_typec)
 {
 	struct device *dev = pmic_typec->dev;
 	unsigned int misc;
+	const struct qptc_reg *reg;
+	u16 offset;
+	bool vbus_detect;
 	int ret;
 
+	reg = qptc_reg(pmic_typec, MISC_STATUS);
+	offset = qptc_reg_offset(reg);
 	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG,
+			  pmic_typec->base + offset,
 			  &misc);
 	if (ret)
 		misc = 0;
 
-	dev_dbg(dev, "get_vbus: 0x%08x detect %d\n", misc, !!(misc & TYPEC_VBUS_DETECT));
+	vbus_detect = qptc_reg_decode(reg, VBUS_DETECT, misc);
 
-	return !!(misc & TYPEC_VBUS_DETECT);
+	dev_dbg(dev, "get_vbus: 0x%08x detect %d\n", misc, vbus_detect);
+
+	return vbus_detect;
 }
 
+// FIXME: pmi8998 doesn't have a register field analogous to this
+// it will need to be handled separately
 int qcom_pmic_tcpm_typec_set_vbus(struct pmic_typec *pmic_typec, bool on)
 {
+	const struct qptc_reg *reg;
 	u32 sm_stat;
 	u32 val;
+	u16 offset;
 	int ret;
 
 	if (on) {
 		ret = regulator_enable(pmic_typec->vdd_vbus);
 		if (ret)
 			return ret;
-
-		val = TYPEC_SM_VBUS_VSAFE5V;
 	} else {
 		ret = regulator_disable(pmic_typec->vdd_vbus);
 		if (ret)
 			return ret;
-
-		val = TYPEC_SM_VBUS_VSAFE0V;
 	}
 
-	/* Poll waiting for transition to required vSafe5V or vSafe0V */
-	ret = regmap_read_poll_timeout(pmic_typec->regmap,
-				       pmic_typec->base + TYPEC_SM_STATUS_REG,
-				       sm_stat, sm_stat & val,
-				       100, 250000);
-	if (ret)
-		dev_err(pmic_typec->dev, "vbus vsafe%dv fail\n", on ? 5 : 0);
+	if (pmic_typec->subtype == PM8150B_SUBTYPE) {
+		reg = qptc_reg(pmic_typec, VBUS_STATUS);
+		offset = qptc_reg_offset(reg);
+		val = qptc_reg_bit(reg, on ? VBUS_VSAFE5V : VBUS_VSAFE0V);
+		/* Poll waiting for transition to required vSafe5V or vSafe0V */
+		ret = regmap_read_poll_timeout(pmic_typec->regmap,
+					pmic_typec->base + offset,
+					sm_stat, sm_stat & val,
+					100, 250000);
+		if (ret)
+			dev_err(pmic_typec->dev, "vbus vsafe%dv fail\n", on ? 5 : 0);
+	}
 
 	return ret;
 }
@@ -201,16 +313,23 @@ int qcom_pmic_tcpm_typec_get_cc(struct pmic_typec *pmic_typec,
 				enum typec_cc_status *cc2)
 {
 	struct device *dev = pmic_typec->dev;
+	const struct qptc_reg *reg;
 	unsigned int misc, val;
+	u16 offset;
 	bool attached;
+	bool orientation;
 	int ret = 0;
 
+	reg = qptc_reg(pmic_typec, MISC_STATUS);
+	offset = qptc_reg_offset(reg);
+
 	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG, &misc);
+			  pmic_typec->base + offset, &misc);
 	if (ret)
 		goto done;
 
-	attached = !!(misc & CC_ATTACHED);
+	attached = qptc_reg_decode(reg, CC_ATTACHED, misc);
+	orientation = qptc_reg_decode(reg, CC_ORIENTATION, misc);
 
 	if (pmic_typec->debouncing_cc) {
 		ret = -EBUSY;
@@ -223,17 +342,20 @@ int qcom_pmic_tcpm_typec_get_cc(struct pmic_typec *pmic_typec,
 	if (!(attached))
 		goto done;
 
-	if (misc & SNK_SRC_MODE) {
+	if (qptc_reg_decode(reg, SNK_SRC_MODE, misc)) {
+		reg = qptc_reg(pmic_typec, SRC_STATUS);
+		offset = qptc_reg_offset(reg);
 		ret = regmap_read(pmic_typec->regmap,
-				  pmic_typec->base + TYPEC_SRC_STATUS_REG,
+				  pmic_typec->base + offset,
 				  &val);
 		if (ret)
 			goto done;
-		switch (val & DETECTED_SRC_TYPE_MASK) {
-		case SRC_RD_OPEN:
+		val = qptc_reg_decode(reg, SRC_TYPE_MASK, val);
+		switch (val) {
+		case SRC_RD_OPEN_VAL:
 			val = TYPEC_CC_RD;
 			break;
-		case SRC_RD_RA_VCONN:
+		case SRC_RD_RA_VCONN_VAL:
 			val = TYPEC_CC_RD;
 			*cc1 = TYPEC_CC_RA;
 			*cc2 = TYPEC_CC_RA;
@@ -244,19 +366,22 @@ int qcom_pmic_tcpm_typec_get_cc(struct pmic_typec *pmic_typec,
 			break;
 		}
 	} else {
+		reg = qptc_reg(pmic_typec, SNK_STATUS);
+		offset = qptc_reg_offset(reg);
 		ret = regmap_read(pmic_typec->regmap,
-				  pmic_typec->base + TYPEC_SNK_STATUS_REG,
+				  pmic_typec->base + offset,
 				  &val);
 		if (ret)
 			goto done;
-		switch (val & DETECTED_SNK_TYPE_MASK) {
-		case SNK_RP_STD:
+		val = qptc_reg_decode(reg, SNK_TYPE_MASK, val);
+		switch (val) {
+		case SNK_RP_STD_VAL:
 			val = TYPEC_CC_RP_DEF;
 			break;
-		case SNK_RP_1P5:
+		case SNK_RP_1P5_VAL:
 			val = TYPEC_CC_RP_1_5;
 			break;
-		case SNK_RP_3P0:
+		case SNK_RP_3P0_VAL:
 			val = TYPEC_CC_RP_3_0;
 			break;
 		default:
@@ -267,7 +392,7 @@ int qcom_pmic_tcpm_typec_get_cc(struct pmic_typec *pmic_typec,
 		val = TYPEC_CC_RP_DEF;
 	}
 
-	if (misc & CC_ORIENTATION)
+	if (orientation)
 		*cc2 = val;
 	else
 		*cc1 = val;
@@ -275,7 +400,7 @@ int qcom_pmic_tcpm_typec_get_cc(struct pmic_typec *pmic_typec,
 done:
 	dev_dbg(dev, "get_cc: misc 0x%08x cc1 0x%08x %s cc2 0x%08x %s attached %d cc=%s\n",
 		misc, *cc1, cc_to_name(*cc1), *cc2, cc_to_name(*cc2), attached,
-		misc_to_cc(misc));
+		orient_to_cc(orientation));
 
 	return ret;
 }
@@ -292,35 +417,48 @@ int qcom_pmic_tcpm_typec_set_cc(struct pmic_typec *pmic_typec,
 {
 	struct device *dev = pmic_typec->dev;
 	unsigned int mode, currsrc;
+	const struct qptc_reg *reg;
 	unsigned int misc;
 	unsigned long flags;
+	bool orientation, attached;
+	u16 offset;
 	int ret;
+
+	reg = qptc_reg(pmic_typec, MISC_STATUS);
+	offset = qptc_reg_offset(reg);
 
 	spin_lock_irqsave(&pmic_typec->lock, flags);
 
 	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG,
+			  pmic_typec->base + offset,
 			  &misc);
 	if (ret)
 		goto done;
+	
+	orientation = qptc_reg_decode(reg, CC_ORIENTATION, misc);
+	attached = qptc_reg_decode(reg, CC_ATTACHED, misc);
 
 	mode = EN_SRC_ONLY;
 
 	switch (cc) {
 	case TYPEC_CC_OPEN:
-		currsrc = TYPEC_SRC_RP_SEL_80UA;
+		currsrc = SRC_RP_SEL_80UA_VAL;
 		break;
 	case TYPEC_CC_RP_DEF:
-		currsrc = TYPEC_SRC_RP_SEL_80UA;
+		currsrc = SRC_RP_SEL_80UA_VAL;
 		break;
 	case TYPEC_CC_RP_1_5:
-		currsrc = TYPEC_SRC_RP_SEL_180UA;
+		currsrc = SRC_RP_SEL_180UA_VAL;
 		break;
 	case TYPEC_CC_RP_3_0:
-		currsrc = TYPEC_SRC_RP_SEL_330UA;
+		// FIXME: is this right?? PMi8998 has no 330ua register
+		if (pmic_typec->subtype == PMI8998_SUBTYPE)
+			currsrc = SRC_RP_SEL_180UA_VAL;
+		else
+			currsrc = SRC_RP_SEL_330UA_VAL;
 		break;
 	case TYPEC_CC_RD:
-		currsrc = TYPEC_SRC_RP_SEL_80UA;
+		currsrc = SRC_RP_SEL_80UA_VAL;
 		mode = EN_SNK_ONLY;
 		break;
 	default:
@@ -330,8 +468,11 @@ int qcom_pmic_tcpm_typec_set_cc(struct pmic_typec *pmic_typec,
 	}
 
 	if (mode == EN_SRC_ONLY) {
+		reg = qptc_reg(pmic_typec, CURRSRC_CFG);
+		offset = qptc_reg_offset(reg);
+		currsrc = qptc_reg_encode(reg, SRC_RP_SEL_MASK, currsrc);
 		ret = regmap_write(pmic_typec->regmap,
-				   pmic_typec->base + TYPEC_CURRSRC_CFG_REG,
+				   pmic_typec->base + offset,
 				   currsrc);
 		if (ret)
 			goto done;
@@ -347,8 +488,8 @@ done:
 	dev_dbg(dev, "set_cc: currsrc=%x %s mode %s debounce %d attached %d cc=%s\n",
 		currsrc, rp_sel_to_name(currsrc),
 		mode == EN_SRC_ONLY ? "EN_SRC_ONLY" : "EN_SNK_ONLY",
-		pmic_typec->debouncing_cc, !!(misc & CC_ATTACHED),
-		misc_to_cc(misc));
+		pmic_typec->debouncing_cc, attached,
+		orient_to_cc(orientation));
 
 	return ret;
 }
@@ -356,35 +497,45 @@ done:
 int qcom_pmic_tcpm_typec_set_vconn(struct pmic_typec *pmic_typec, bool on)
 {
 	struct device *dev = pmic_typec->dev;
-	unsigned int orientation, misc, mask, value;
+	unsigned int vconn_orient, misc, mask, value;
+	const struct qptc_reg *reg;
+	u16 offset;
 	unsigned long flags;
 	int ret;
 
+	reg = qptc_reg(pmic_typec, MISC_STATUS);
+	offset = qptc_reg_offset(reg);
 	spin_lock_irqsave(&pmic_typec->lock, flags);
 
 	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG, &misc);
+			  pmic_typec->base + offset, &misc);
 	if (ret)
 		goto done;
 
 	/* Set VCONN on the inversion of the active CC channel */
-	orientation = (misc & CC_ORIENTATION) ? 0 : VCONN_EN_ORIENTATION;
+	vconn_orient = !qptc_reg_decode(reg, CC_ORIENTATION, misc);
+
+	reg = qptc_reg(pmic_typec, VCONN_CFG);
+	offset = qptc_reg_offset(reg);
 	if (on) {
-		mask = VCONN_EN_ORIENTATION | VCONN_EN_VALUE;
-		value = orientation | VCONN_EN_VALUE | VCONN_EN_SRC;
+		mask = qptc_reg_mask_prepare(reg,
+					     BIT(VCONN_EN_ORIENTATION) |
+					     BIT(VCONN_EN_VALUE));
+		value = qptc_reg_mask_prepare(reg, BIT(VCONN_EN_VALUE) | BIT(VCONN_EN_SRC));
+		value |= qptc_reg_encode(reg, VCONN_EN_ORIENTATION, vconn_orient);
 	} else {
-		mask = VCONN_EN_VALUE;
+		mask = qptc_reg_encode(reg, VCONN_EN_VALUE, 1);
 		value = 0;
 	}
 
 	ret = regmap_update_bits(pmic_typec->regmap,
-				 pmic_typec->base + TYPEC_VCONN_CONTROL_REG,
+				 pmic_typec->base + offset,
 				 mask, value);
 done:
 	spin_unlock_irqrestore(&pmic_typec->lock, flags);
 
 	dev_dbg(dev, "set_vconn: orientation %d control 0x%08x state %s cc %s vconn %s\n",
-		orientation, value, on ? "on" : "off", misc_to_vconn(misc), misc_to_cc(misc));
+		vconn_orient, value, on ? "on" : "off", orient_to_vconn(!vconn_orient), orient_to_cc(!vconn_orient));
 
 	return ret;
 }
@@ -395,101 +546,141 @@ int qcom_pmic_tcpm_typec_start_toggling(struct pmic_typec *pmic_typec,
 {
 	struct device *dev = pmic_typec->dev;
 	unsigned int misc;
+	const struct qptc_reg *reg;
+	u16 offset;
 	u8 mode = 0;
+	u8 val = 0;
+	bool attached;
 	unsigned long flags;
 	int ret;
 
 	switch (port_type) {
 	case TYPEC_PORT_SRC:
-		mode = EN_SRC_ONLY;
+		mode = SRC_ONLY_MODE_VAL;
 		break;
 	case TYPEC_PORT_SNK:
-		mode = EN_SNK_ONLY;
+		mode = SNK_ONLY_MODE_VAL;
 		break;
 	case TYPEC_PORT_DRP:
-		mode = EN_TRY_SNK;
+		mode = DRP_MODE_VAL;
 		break;
 	}
+
+	reg = qptc_reg(pmic_typec, MISC_STATUS);
+	offset = qptc_reg_offset(reg);
 
 	spin_lock_irqsave(&pmic_typec->lock, flags);
 
 	ret = regmap_read(pmic_typec->regmap,
-			  pmic_typec->base + TYPEC_MISC_STATUS_REG, &misc);
+			  pmic_typec->base + offset, &misc);
 	if (ret)
 		goto done;
+	
+	attached = qptc_reg_decode(reg, CC_ATTACHED, misc);
 
-	dev_dbg(dev, "start_toggling: misc 0x%08x attached %d port_type %d current cc %d new %d\n",
-		misc, !!(misc & CC_ATTACHED), port_type, pmic_typec->cc, cc);
+	dev_dbg(dev, "start_toggling: misc 0x%02x attached %d port_type %d current cc %d new %d\n",
+		(u8)misc, attached, port_type, pmic_typec->cc, cc);
 
 	qcom_pmic_set_cc_debounce(pmic_typec);
 
+	reg = qptc_reg(pmic_typec, MODE_CFG);
+	offset = qptc_reg_offset(reg);
+
 	/* force it to toggle at least once */
-	ret = regmap_write(pmic_typec->regmap,
-			   pmic_typec->base + TYPEC_MODE_CFG_REG,
-			   TYPEC_DISABLE_CMD);
+	val = qptc_reg_encode(reg, DISABLE_CMD, 1);
+	ret = regmap_update_bits(pmic_typec->regmap,
+			   pmic_typec->base + offset,
+			   val, val);
 	if (ret)
 		goto done;
 
-	ret = regmap_write(pmic_typec->regmap,
-			   pmic_typec->base + TYPEC_MODE_CFG_REG,
-			   mode);
+	val = qptc_reg_encode(reg, POWER_ROLE_CMD_MASK, mode);
+	ret = regmap_update_bits(pmic_typec->regmap,
+			   pmic_typec->base + offset,
+			   val, val);
 done:
 	spin_unlock_irqrestore(&pmic_typec->lock, flags);
 
 	return ret;
 }
 
-#define TYPEC_INTR_EN_CFG_1_MASK		  \
-	(TYPEC_LEGACY_CABLE_INT_EN		| \
-	 TYPEC_NONCOMPLIANT_LEGACY_CABLE_INT_EN	| \
-	 TYPEC_TRYSOURCE_DETECT_INT_EN		| \
-	 TYPEC_TRYSINK_DETECT_INT_EN		| \
-	 TYPEC_CCOUT_DETACH_INT_EN		| \
-	 TYPEC_CCOUT_ATTACH_INT_EN		| \
-	 TYPEC_VBUS_DEASSERT_INT_EN		| \
-	 TYPEC_VBUS_ASSERT_INT_EN)
-
-#define TYPEC_INTR_EN_CFG_2_MASK \
-	(TYPEC_STATE_MACHINE_CHANGE_INT_EN | TYPEC_VBUS_ERROR_INT_EN | \
-	 TYPEC_DEBOUNCE_DONE_INT_EN)
+#define TYPEC_INTR_EN_CFG_MASK			  \
+	(BIT(LEGACY_CABLE_INT_EN)		| \
+	 BIT(NONCOMPLIANT_LEGACY_CABLE_INT_EN)	| \
+	 BIT(TRYSOURCE_DETECT_INT_EN)		| \
+	 BIT(TRYSINK_DETECT_INT_EN)		| \
+	 BIT(CCOUT_DETACH_INT_EN)		| \
+	 BIT(CCOUT_ATTACH_INT_EN)		| \
+	 BIT(VBUS_DEASSERT_INT_EN)		| \
+	 BIT(VBUS_ASSERT_INT_EN)		| \
+	 BIT(STATE_MACHINE_CHANGE_INT_EN)	| \
+	 BIT(VBUS_ERROR_INT_EN)			| \
+	 BIT(DEBOUNCE_DONE_INT_EN))
 
 int qcom_pmic_tcpm_typec_init(struct pmic_typec *pmic_typec,
 			      struct tcpm_port *tcpm_port)
 {
+	const struct qptc_reg *reg;
+	u16 offset;
 	int i;
 	int mask;
 	int ret;
+	u8 intr_masks[2];
+
+	qptc_intr_cfg(pmic_typec, TYPEC_INTR_EN_CFG_MASK, intr_masks);
+
+	reg = qptc_reg(pmic_typec, INTR_1_CFG);
+	offset = qptc_reg_offset(reg);
 
 	/* Configure interrupt sources */
 	ret = regmap_write(pmic_typec->regmap,
-			   pmic_typec->base + TYPEC_INTERRUPT_EN_CFG_1_REG,
-			   TYPEC_INTR_EN_CFG_1_MASK);
+			   pmic_typec->base + offset,
+			   intr_masks[0]);
 	if (ret)
 		goto done;
 
+	reg = qptc_reg(pmic_typec, INTR_2_CFG);
+	offset = qptc_reg_offset(reg);
 	ret = regmap_write(pmic_typec->regmap,
-			   pmic_typec->base + TYPEC_INTERRUPT_EN_CFG_2_REG,
-			   TYPEC_INTR_EN_CFG_2_MASK);
+			   pmic_typec->base + offset,
+			   intr_masks[1]);
 	if (ret)
 		goto done;
 
 	/* start in TRY_SNK mode */
-	ret = regmap_write(pmic_typec->regmap,
-			   pmic_typec->base + TYPEC_MODE_CFG_REG, EN_TRY_SNK);
-	if (ret)
-		goto done;
+	// FIXME: pmi8998 downstream explicitly says "disable try.sink", investigate
+	if (pmic_typec->subtype == PMI8998_SUBTYPE) {
+		reg = qptc_reg(pmic_typec, MODE_2_CFG);
+		offset = qptc_reg_offset(reg);
+		ret = regmap_write(pmic_typec->regmap,
+				pmic_typec->base + offset, qptc_reg_encode(reg, EN_TRY_SNK, 0));
+		if (ret)
+			goto done;
+	} else {
+		reg = qptc_reg(pmic_typec, MODE_CFG);
+		offset = qptc_reg_offset(reg);
+		ret = regmap_write(pmic_typec->regmap,
+				pmic_typec->base + offset, qptc_reg_encode(reg, EN_TRY_SNK, 1));
+		if (ret)
+			goto done;
+	}
 
 	/* Configure VCONN for software control */
+	reg = qptc_reg(pmic_typec, VCONN_CFG);
+	offset = qptc_reg_offset(reg);
+	mask = qptc_reg_mask_prepare(reg, BIT(VCONN_EN_SRC) | BIT(VCONN_EN_VALUE));
 	ret = regmap_update_bits(pmic_typec->regmap,
-				 pmic_typec->base + TYPEC_VCONN_CONTROL_REG,
-				 VCONN_EN_SRC | VCONN_EN_VALUE, VCONN_EN_SRC);
+				 pmic_typec->base + offset,
+				 mask, qptc_reg_encode(reg, VCONN_EN_SRC, 1));
 	if (ret)
 		goto done;
 
 	/* Set CC threshold to 1.6 Volts | tPDdebounce = 10-20ms */
-	mask = SEL_SRC_UPPER_REF | USE_TPD_FOR_EXITING_ATTACHSRC;
+	reg = qptc_reg(pmic_typec, VCONN_CFG);
+	offset = qptc_reg_offset(reg);
+	mask = qptc_reg_mask_prepare(reg, BIT(SEL_SRC_UPPER_REF) | BIT(USE_TPD_FOR_EXITING_ATTACHSRC));
 	ret = regmap_update_bits(pmic_typec->regmap,
-				 pmic_typec->base + TYPEC_EXIT_STATE_CFG_REG,
+				 pmic_typec->base + offset,
 				 mask, mask);
 	if (ret)
 		goto done;
@@ -572,8 +763,9 @@ static int qcom_pmic_tcpm_typec_probe(struct platform_device *pdev)
 		irq_data->pmic_typec = pmic_typec;
 		irq_data->irq = irq;
 		irq_data->virq = res->irq_params[i].virq;
-		ret = devm_request_threaded_irq(dev, irq, NULL, pmic_typec_isr,
-						IRQF_ONESHOT | IRQF_NO_AUTOEN,
+		ret = devm_request_threaded_irq(dev, irq, NULL, res->irq_handler,
+						IRQF_ONESHOT | IRQF_NO_AUTOEN |
+						res->irq_params[i].irq_flags,
 						res->irq_params[i].irq_name,
 						irq_data);
 		if (ret)
@@ -592,7 +784,7 @@ static struct pmic_typec_resources pm8150b_typec_res = {
 
 		{
 			.irq_name = "cc-state-change",
-			.virq = PMIC_TYPEC_CC_STATE_IRQ,
+			.virq = PMIC_TYPEC_CC_STATE_IRQ, // used
 		},
 		{
 			.irq_name = "vconn-oc",
@@ -601,12 +793,12 @@ static struct pmic_typec_resources pm8150b_typec_res = {
 
 		{
 			.irq_name = "vbus-change",
-			.virq = PMIC_TYPEC_VBUS_IRQ,
+			.virq = PMIC_TYPEC_VBUS_IRQ, // used
 		},
 
 		{
 			.irq_name = "attach-detach",
-			.virq = PMIC_TYPEC_ATTACH_DETACH_IRQ,
+			.virq = PMIC_TYPEC_ATTACH_DETACH_IRQ, // used
 		},
 		{
 			.irq_name = "legacy-cable-detect",
@@ -619,10 +811,47 @@ static struct pmic_typec_resources pm8150b_typec_res = {
 		},
 	},
 	.nr_irqs = 7,
+	.regs = &qcom_pmic_typec_pm8150b_regs,
+	.irq_handler = pmic_typec_isr_pm8150b,
+};
+
+static struct pmic_typec_resources pmi8998_typec_res = {
+	.irq_params = {
+		{
+			/*
+			 * on pmi8998 this IRQ is used for most things
+			 * See TYPE_C_INTRPT_ENB_REG:
+			 * - TYPEC_CCOUT_DETACH_INT_EN_BIT
+			 * - TYPEC_CCOUT_ATTACH_INT_EN_BIT
+			 * - TYPEC_VBUS_ERROR_INT_EN_BIT
+			 * - TYPEC_UFP_AUDIOADAPT_INT_EN_BIT
+			 * - TYPEC_DEBOUNCE_DONE_INT_EN_BIT
+			 * - TYPEC_CCSTATE_CHANGE_INT_EN_BIT
+			 * - TYPEC_VBUS_DEASSERT_INT_EN_BIT
+			 * - TYPEC_VBUS_ASSERT_INT_EN_BIT
+			 *
+			 * This irq is probably also used for
+			 * PMIC_TYPEC_VBUS_IRQ
+			 */
+			.irq_name = "type-c-change",
+			.virq = PMIC_TYPEC_CC_STATE_IRQ,
+			.irq_flags = 0,
+		},
+		{
+			/* usb-plugin IRQ, shared with charger */
+			.irq_name = "attach-detach",
+			.virq = PMIC_TYPEC_VBUS_IRQ,
+			.irq_flags = IRQF_SHARED,
+		},
+	},
+	.nr_irqs = 2,
+	.regs = &qcom_pmic_typec_pmi8998_regs,
+	.irq_handler = pmic_typec_isr_pmi8998,
 };
 
 static const struct of_device_id qcom_pmic_tcpm_typec_table[] = {
 	{ .compatible = "qcom,pm8150b-typec", .data = &pm8150b_typec_res },
+	{ .compatible = "qcom,pmi8998-typec", .data = &pmi8998_typec_res },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, qcom_pmic_tcpm_typec_table);
