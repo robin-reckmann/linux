@@ -19,6 +19,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/reset.h>
 #include <linux/slab.h>
+#include <linux/usb/typec_mux.h>
 
 #include "phy-qcom-qmp.h"
 
@@ -59,6 +60,10 @@
 
 /* QPHY_V3_PCS_MISC_CLAMP_ENABLE register bits */
 #define CLAMP_EN				BIT(0) /* enables i/o clamp_n */
+
+/* QPHY_V3_DP_COM_TYPEC_CTRL register bits */
+#define SW_PORTSELECT_VAL			BIT(0)
+#define SW_PORTSELECT_MUX			BIT(1)
 
 #define PHY_INIT_COMPLETE_TIMEOUT		10000
 
@@ -1487,6 +1492,9 @@ struct qmp_usb {
 	struct phy *phy;
 
 	struct clk_fixed_rate pipe_clk_fixed;
+
+	struct typec_switch_dev *sw;
+	enum typec_orientation orientation;	
 };
 
 static inline void qphy_setbits(void __iomem *base, u32 offset, u32 val)
@@ -1987,6 +1995,7 @@ static int qmp_usb_init(struct phy *phy)
 	const struct qmp_phy_cfg *cfg = qmp->cfg;
 	void __iomem *pcs = qmp->pcs;
 	void __iomem *dp_com = qmp->dp_com;
+	u32 val;
 	int ret;
 
 	ret = regulator_bulk_enable(cfg->num_vregs, qmp->vregs);
@@ -2019,8 +2028,11 @@ static int qmp_usb_init(struct phy *phy)
 			     SW_DPPHY_RESET_MUX | SW_DPPHY_RESET |
 			     SW_USB3PHY_RESET_MUX | SW_USB3PHY_RESET);
 
-		/* Default type-c orientation, i.e CC1 */
-		qphy_setbits(dp_com, QPHY_V3_DP_COM_TYPEC_CTRL, 0x02);
+		/* Latch CC orientation based on reported state by TCPM */
+		val = SW_PORTSELECT_MUX;
+		if (qmp->orientation == TYPEC_ORIENTATION_REVERSE)
+			val |= SW_PORTSELECT_VAL;
+		qphy_setbits(dp_com, QPHY_V3_DP_COM_TYPEC_CTRL, val);
 
 		qphy_setbits(dp_com, QPHY_V3_DP_COM_PHY_MODE_CTRL,
 			     USB3_MODE | DP_MODE);
@@ -2510,6 +2522,44 @@ static int qmp_usb_parse_dt(struct qmp_usb *qmp)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_PHY_QCOM_QMP_TYPEC)
+static int qcom_qmp_phy_typec_switch_set(struct typec_switch_dev *sw,
+					 enum typec_orientation orientation)
+{
+	struct qmp_usb *qmp = typec_switch_get_drvdata(sw);
+	struct phy *qphy = qmp->phy;
+
+	dev_info(qmp->dev, "Toggling orientation current %d requested %d\n",
+		qmp->orientation, orientation);
+
+	qmp->orientation = orientation;
+
+	return 0;
+}
+
+static int qcom_qmp_phy_typec_switch_register(struct qmp_usb *qmp, const struct qmp_phy_cfg *cfg)
+{
+	struct typec_switch_desc sw_desc;
+	struct device *dev = qmp->dev;
+
+	sw_desc.drvdata = qmp;
+	sw_desc.fwnode = dev->fwnode;
+	sw_desc.set = qcom_qmp_phy_typec_switch_set;
+	qmp->sw = typec_switch_register(dev, &sw_desc);
+	if (IS_ERR(qmp->sw)) {
+		dev_err(dev, "Error registering typec switch: %ld\n",
+			PTR_ERR(qmp->sw));
+	}
+
+	return 0;
+}
+#else
+static int qcom_qmp_phy_typec_switch_register(struct qmp_usb *qmp, const struct qmp_phy_cfg *cfg)
+{
+	return 0;
+}
+#endif
+
 static int qmp_usb_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -2575,6 +2625,8 @@ static int qmp_usb_probe(struct platform_device *pdev)
 	phy_set_drvdata(qmp->phy, qmp);
 
 	of_node_put(np);
+	if (qmp->cfg->has_phy_dp_com_ctrl)
+		qcom_qmp_phy_typec_switch_register(qmp, qmp->cfg);
 
 	phy_provider = devm_of_phy_provider_register(dev, of_phy_simple_xlate);
 

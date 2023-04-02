@@ -32,6 +32,10 @@ static const unsigned int curr_table[] = {
 	500000, 1000000, 1500000, 2000000, 2500000, 3000000,
 };
 
+static const unsigned int curr_table_pmi8998[] = {
+       250000, 500000, 750000, 1000000, 1250000, 1500000, 1750000, 2000000,
+};
+
 static int qcom_usb_vbus_regulator_is_enabled(struct regulator_dev *rdev)
 {
 	int ret;
@@ -63,8 +67,29 @@ static struct regulator_desc qcom_usb_vbus_rdesc = {
 	.ops = &qcom_usb_vbus_reg_ops,
 	.owner = THIS_MODULE,
 	.type = REGULATOR_VOLTAGE,
-	.curr_table = curr_table,
-	.n_current_limits = ARRAY_SIZE(curr_table),
+       .curr_table = curr_table_pmi8998, // FIXME: make dynamic
+       .n_current_limits = ARRAY_SIZE(curr_table_pmi8998),
+};
+
+irqreturn_t qcom_usb_vbus_regulator_oc_irq(int irq, void *data)
+{
+       struct regulator_dev *rdev = data;
+       struct device *dev = rdev_get_dev(rdev);
+       int ret;
+       unsigned int val;
+
+       ret = regmap_read(rdev->regmap, rdev->desc->enable_reg, &val);
+       if (ret || val & OTG_EN)
+               return IRQ_HANDLED;
+
+       dev_warn(dev, "VBUS overcurrent detected\n");
+
+       // AWFUL AWFUL AWFUL
+       regmap_write(rdev->regmap, rdev->desc->enable_reg, 0);
+       msleep(100);
+       regmap_write(rdev->regmap, rdev->desc->enable_reg, 1);
+
+       return IRQ_HANDLED;
 };
 
 static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
@@ -74,7 +99,7 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	struct regmap *regmap;
 	struct regulator_config config = { };
 	struct regulator_init_data *init_data;
-	int ret;
+	int ret, irq;
 	u32 base;
 	bool has_status_reg;
 
@@ -116,6 +141,11 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 		dev_err(dev, "not able to register vbus reg %d\n", ret);
 		return ret;
 	}
+
+       irq = platform_get_irq_byname(pdev, "otg-overcurrent");
+       ret = devm_request_threaded_irq(dev, irq, NULL, qcom_usb_vbus_regulator_oc_irq, IRQF_ONESHOT, NULL, rdev);
+       if (ret)
+               return dev_err_probe(dev, ret, "Failed to request IRQ\n");
 
 	/* Disable HW logic for VBUS enable */
 	regmap_update_bits(regmap, base + OTG_CFG, OTG_EN_SRC_CFG, 0);

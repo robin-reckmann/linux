@@ -60,10 +60,20 @@ static int qcom_pmic_tcpm_core_set_vbus(struct tcpc_dev *tcpc, bool on,
 	tcpm_vbus_change(tcpm->tcpm_port);
 
 done:
-	dev_dbg(tcpm->dev, "set_vbus set: %d result %d\n", on, ret);
+	dev_info(tcpm->dev, "set_vbus set: %d result %d\n", on, ret);
 	mutex_unlock(&tcpm->lock);
 
 	return ret;
+}
+
+static int qcom_pmic_tcpm_core_set_current_limit(struct tcpc_dev *tcpc,
+                                                u32 ma, u32 mv)
+{
+       struct pmic_tcpm *tcpm = tcpc_to_tcpm(tcpc);
+
+       //WARN(mv != 5000, "Unsupported voltage %d\n", mv);
+
+       return qcom_pmic_tcpm_typec_set_current_limit(tcpm->pmic_typec, ma);
 }
 
 static int qcom_pmic_tcpm_core_set_vconn(struct tcpc_dev *tcpc, bool on)
@@ -181,9 +191,11 @@ static int qcom_pmic_tcpm_core_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	tcpm->dev = dev;
+	tcpm->tcpc.fwnode = dev_fwnode(dev);
 	tcpm->tcpc.init = qcom_pmic_tcpm_core_init;
 	tcpm->tcpc.get_vbus = qcom_pmic_tcpm_core_get_vbus;
 	tcpm->tcpc.set_vbus = qcom_pmic_tcpm_core_set_vbus;
+	tcpm->tcpc.set_current_limit = qcom_pmic_tcpm_core_set_current_limit;
 	tcpm->tcpc.set_cc = qcom_pmic_tcpm_core_set_cc;
 	tcpm->tcpc.get_cc = qcom_pmic_tcpm_core_get_cc;
 	tcpm->tcpc.set_polarity = qcom_pmic_tcpm_core_set_polarity;
@@ -196,7 +208,7 @@ static int qcom_pmic_tcpm_core_probe(struct platform_device *pdev)
 	mutex_init(&tcpm->lock);
 	platform_set_drvdata(pdev, tcpm);
 
-	typec_pdev = qcom_pmic_tcpm_core_get_pdev(dev, "pmic_tcpm_typec");
+	typec_pdev = qcom_pmic_tcpm_core_get_pdev(dev, "qcom,pmic-tcpm-typec");
 	if (IS_ERR(typec_pdev)) {
 		dev_err(dev, "Error linking typec endpoint\n");
 		return PTR_ERR(typec_pdev);
@@ -208,7 +220,7 @@ static int qcom_pmic_tcpm_core_probe(struct platform_device *pdev)
 		goto put_typec_pdev;
 	}
 
-	pdphy_pdev = qcom_pmic_tcpm_core_get_pdev(dev, "pmic_tcpm_pdphy");
+	pdphy_pdev = qcom_pmic_tcpm_core_get_pdev(dev, "qcom,pmic-tcpm-pdphy");
 	if (IS_ERR(pdphy_pdev)) {
 		dev_err(dev, "Error linking pdphy endpoint\n");
 		ret = PTR_ERR(pdphy_pdev);
@@ -222,22 +234,29 @@ static int qcom_pmic_tcpm_core_probe(struct platform_device *pdev)
 	}
 
 	tcpm->tcpc.fwnode = device_get_named_child_node(tcpm->dev, "connector");
-	if (IS_ERR(tcpm->tcpc.fwnode))
+	if (IS_ERR(tcpm->tcpc.fwnode)) {
+		dev_err(tcpm->dev, "failed to get connector node\n");
 		return PTR_ERR(tcpm->tcpc.fwnode);
+	}
 
 	tcpm->tcpm_port = tcpm_register_port(tcpm->dev, &tcpm->tcpc);
 	if (IS_ERR(tcpm->tcpm_port)) {
+		dev_err(tcpm->dev, "failed to register tcpm port\n");
 		ret = PTR_ERR(tcpm->tcpm_port);
 		goto fwnode_remove;
 	}
 
 	ret = qcom_pmic_tcpm_pdphy_init(tcpm->pmic_pdphy, tcpm->tcpm_port);
-	if (ret)
-		goto fwnode_remove;
+	if (ret) {
+		dev_err(tcpm->dev, "failed to initialize pdphy\n");
+		return ret;
+	}
 
 	ret = qcom_pmic_tcpm_typec_init(tcpm->pmic_typec, tcpm->tcpm_port);
-	if (ret)
-		goto fwnode_remove;
+	if (ret) {
+		dev_err(tcpm->dev, "failed to initialize typec\n");
+		return ret;
+	}
 
 	return 0;
 
@@ -267,6 +286,7 @@ static int qcom_pmic_tcpm_core_remove(struct platform_device *pdev)
 
 static const struct of_device_id qcom_pmic_tcpm_core_table[] = {
 	{ .compatible = "qcom,pm8150b-tcpm" },
+	{ .compatible = "qcom,pmi8998-tcpm" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, qcom_pmic_tcpm_core_table);

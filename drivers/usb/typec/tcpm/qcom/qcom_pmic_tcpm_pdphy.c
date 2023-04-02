@@ -48,6 +48,7 @@ struct pmic_pdphy {
 	struct work_struct		reset_work;
 	struct work_struct		receive_work;
 	struct regulator		*vdd_pdphy;
+	bool 					pdphy_enabled;
 	spinlock_t			lock;		/* Register atomicity */
 };
 
@@ -263,7 +264,7 @@ int qcom_pmic_tcpm_pdphy_pd_transmit(struct pmic_pdphy *pmic_pdphy,
 	}
 
 	if (ret)
-		dev_dbg(dev, "pd_transmit: type %x result %d\n", type, ret);
+		dev_info(dev, "pd_transmit: type %x result %d\n", type, ret);
 
 	return ret;
 }
@@ -285,7 +286,7 @@ static void qcom_pmic_tcpm_pdphy_pd_receive(struct pmic_pdphy *pmic_pdphy)
 
 	/* If we received a subsequent RX sig this value can be zero */
 	if ((size < 1 || size > sizeof(msg.payload))) {
-		dev_dbg(dev, "pd_receive: invalid size %d\n", size);
+		dev_info(dev, "pd_receive: invalid size %d\n", size);
 		goto done;
 	}
 
@@ -361,7 +362,7 @@ int qcom_pmic_tcpm_pdphy_set_pd_rx(struct pmic_pdphy *pmic_pdphy, bool on)
 
 	spin_unlock_irqrestore(&pmic_pdphy->lock, flags);
 
-	dev_dbg(pmic_pdphy->dev, "set_pd_rx: %s\n", on ? "on" : "off");
+	dev_info(pmic_pdphy->dev, "set_pd_rx: %s\n", on ? "on" : "off");
 
 	return ret;
 }
@@ -383,7 +384,7 @@ int qcom_pmic_tcpm_pdphy_set_roles(struct pmic_pdphy *pmic_pdphy,
 
 	spin_unlock_irqrestore(&pmic_pdphy->lock, flags);
 
-	dev_dbg(dev, "pdphy_set_roles: data_role_host=%d power_role_src=%d\n",
+	dev_info(dev, "pdphy_set_roles: data_role_host=%d power_role_src=%d\n",
 		data_role_host, power_role_src);
 
 	return ret;
@@ -393,6 +394,9 @@ static int qcom_pmic_tcpm_pdphy_enable(struct pmic_pdphy *pmic_pdphy)
 {
 	struct device *dev = pmic_pdphy->dev;
 	int ret;
+
+	if (pmic_pdphy->pdphy_enabled)
+		return 0;
 
 	ret = regulator_enable(pmic_pdphy->vdd_pdphy);
 	if (ret)
@@ -421,7 +425,10 @@ done:
 	if (ret) {
 		regulator_disable(pmic_pdphy->vdd_pdphy);
 		dev_err(dev, "pdphy_enable fail %d\n", ret);
-	}
+    } else {
+        pmic_pdphy->pdphy_enabled = true;
+    }
+
 
 	return ret;
 }
@@ -434,8 +441,11 @@ static int qcom_pmic_tcpm_pdphy_disable(struct pmic_pdphy *pmic_pdphy)
 
 	ret = regmap_write(pmic_pdphy->regmap,
 			   pmic_pdphy->base + USB_PDPHY_EN_CONTROL_REG, 0);
+			   
+    if (pmic_pdphy->pdphy_enabled)
+    	regulator_disable(pmic_pdphy->vdd_pdphy);
 
-	regulator_disable(pmic_pdphy->vdd_pdphy);
+    pmic_pdphy->pdphy_enabled = false;
 
 	return ret;
 }
@@ -591,6 +601,7 @@ static struct pmic_pdphy_resources pm8150b_pdphy_res = {
 
 static const struct of_device_id qcom_pmic_tcpm_pdphy_table[] = {
 	{ .compatible = "qcom,pm8150b-pdphy", .data = &pm8150b_pdphy_res },
+	{ .compatible = "qcom,pmi8998-pdphy", .data = &pm8150b_pdphy_res },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, qcom_pmic_tcpm_pdphy_table);

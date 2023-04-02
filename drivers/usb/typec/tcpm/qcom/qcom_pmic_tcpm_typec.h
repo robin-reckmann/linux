@@ -25,6 +25,9 @@ int qcom_pmic_tcpm_typec_set_cc(struct pmic_typec *pmic_typec,
 
 int qcom_pmic_tcpm_typec_get_vbus(struct pmic_typec *pmic_typec);
 
+int qcom_pmic_tcpm_typec_set_current_limit(struct pmic_typec *pmic_typec,
+                                          int ma);
+
 int qcom_pmic_tcpm_typec_set_vconn(struct pmic_typec *pmic_typec, bool on);
 
 int qcom_pmic_tcpm_typec_start_toggling(struct pmic_typec *pmic_typec,

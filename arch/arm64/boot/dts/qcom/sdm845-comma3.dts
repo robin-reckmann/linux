@@ -1,7 +1,10 @@
 /dts-v1/;
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/usb/pd.h>
 #include "sdm845.dtsi"
+#include "pm8998.dtsi"
+#include "pmi8998.dtsi"
 
 / {
 	model = "comma.ai comma three";
@@ -421,6 +424,62 @@
 	vdda-pll-supply = <&vdda_pcie_1p2>;
 };
 
+&pmi8998_pdphy {
+	vdd-pdphy-supply = <&vdda_qusb_hs0_3p1>;
+	status = "okay";
+};
+
+&pmi8998_tcpm {
+	status = "okay";
+
+	connector {
+		compatible = "usb-c-connector";
+
+		power-role = "dual";
+		data-role = "dual";
+		self-powered;
+		try-power-role = "source";
+
+    sink-pdos = <PDO_FIXED(5000, 3000,
+            PDO_FIXED_DUAL_ROLE |
+            PDO_FIXED_USB_COMM |
+            PDO_FIXED_DATA_SWAP)>;
+
+		source-pdos = <PDO_FIXED(5000, 1500,
+					 PDO_FIXED_DUAL_ROLE |
+					 PDO_FIXED_USB_COMM |
+					 PDO_FIXED_DATA_SWAP)>;
+
+		op-sink-microwatt = <250000>;
+
+		port {
+			connector: endpoint {
+				remote-endpoint = <&tcpm_connector>;
+			};
+		};
+	};
+
+	port {
+		usb3_role: endpoint@0 {
+				remote-endpoint = <&dwc3_drd_switch>;
+		};
+		tcpm_connector: endpoint@1 {
+				remote-endpoint = <&connector>;
+		};
+	};
+};
+
+&pmi8998_typec {
+	vdd-vbus-supply = <&pmi8998_vbus>;
+	status = "okay";
+};
+
+&pmi8998_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <1500000>;
+	status = "okay";
+};
+
 &qupv3_id_0 {
 	status = "okay";
 };
@@ -447,6 +506,37 @@
 };
 
 /*TODO: otg/dual-role support for &usb_1 */
+
+&usb_1 {
+	status = "okay";
+
+	usb-role-switch;
+};
+
+&usb_1_dwc3 {
+	dr_mode = "otg";
+	usb-role-switch;
+	port {
+		dwc3_drd_switch: endpoint {
+			remote-endpoint = <&usb3_role>;
+		};
+	};
+};
+
+&usb_1_hsphy {
+	status = "okay";
+
+	vdd-supply = <&vdd_qusb_hs0>;
+	vdda-pll-supply = <&vdda_qusb_hs0_1p8>;
+	vdda-phy-dpdm-supply = <&vdda_qusb_hs0_3p1>;
+};
+
+&usb_1_qmpphy {
+	status = "okay";
+
+	vdda-phy-supply = <&vdda_usb1_ss_1p2>;
+	vdda-pll-supply = <&vdda_usb1_ss_core>;
+};
 
 &usb_2 {
 	status = "okay";

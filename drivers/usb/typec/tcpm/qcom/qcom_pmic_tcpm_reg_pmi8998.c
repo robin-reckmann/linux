@@ -302,7 +302,7 @@ static const u8 qptc_reg_src_status_fields[] = {
 QPTC_REG(SRC_STATUS, src_status, PMI8998_TYPE_C_STATUS_2_REG);
 
 static const u8 qptc_reg_misc_status_fields[] = {
-	[SNK_SRC_MODE] = PMI8998_TYPE_C_STATUS_4_REG,
+	[SNK_SRC_MODE] = PMI8998_UFP_DFP_MODE_STATUS_BIT,
 	[VBUS_DETECT] = PMI8998_TYPEC_VBUS_STATUS_BIT,
 	[VBUS_ERROR_STATUS] = PMI8998_TYPEC_VBUS_ERROR_STATUS_BIT,
 	[DEBOUNCE_DONE] = PMI8998_TYPEC_DEBOUNCE_DONE_STATUS_BIT,
@@ -343,6 +343,8 @@ QPTC_REG(EXIT_STATE_CFG, exit_state_cfg, PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL
 
 static const u8 qptc_reg_currsrc_cfg_fields[] = {
 	[SRC_RP_SEL_180UA] = PMI8998_EN_80UA_180UA_CUR_SOURCE_BIT,
+	[CC_1P4_1P6] = PMI8998_DFP_CC_1P4V_OR_1P6V_BIT,
+	[SRC_RP_SEL_MASK] = PMI8998_EN_80UA_180UA_CUR_SOURCE_BIT,
 };
 
 QPTC_REG(CURRSRC_CFG, currsrc_cfg, PMI8998_TYPE_C_CFG_2_REG);
@@ -388,6 +390,7 @@ static const struct qptc_reg *pm8150b_regs[] = {
 	[SRC_STATUS] = &qptc_reg_src_status,
 	[MISC_STATUS] = &qptc_reg_misc_status,
 	[MODE_CFG] = &qptc_reg_mode_cfg,
+	[MODE_2_CFG] = &qptc_reg_mode_2_cfg,
 	[VCONN_CFG] = &qptc_reg_vconn_cfg,
 	[EXIT_STATE_CFG] = &qptc_reg_exit_state_cfg,
 	[CURRSRC_CFG] = &qptc_reg_currsrc_cfg,
