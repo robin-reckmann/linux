@@ -344,6 +344,29 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&i2c5 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&i2c10 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&qupv3_id_0 {
+	status = "okay";
+};
+
 &qupv3_id_1 {
 	status = "okay";
 };
