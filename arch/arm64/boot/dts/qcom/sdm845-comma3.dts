@@ -38,6 +38,18 @@
 
 		vin-supply = <&vph_pwr>;
 	};
+
+	ssd3v3: ssd3v3 {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "ssd3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+
+		gpio = <&tlmm 41 0>;
+		enable-active-high;
+	};
 };
 
 &apps_rsc {
@@ -373,6 +385,19 @@
 		/* value is 30mOhm, measured in uohms */
 		shunt-resistor = <30000>;
 	};
+};
+
+&pcie1 {
+	status = "okay";
+
+	vddpe-3v3-supply = <&ssd3v3>;
+};
+
+&pcie1_phy {
+	status = "okay";
+
+	vdda-phy-supply = <&vdda_pcie_core>;
+	vdda-pll-supply = <&vdda_pcie_1p2>;
 };
 
 &qupv3_id_0 {
