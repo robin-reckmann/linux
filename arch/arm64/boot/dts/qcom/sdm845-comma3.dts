@@ -356,11 +356,23 @@
 &i2c5 {
 	status = "okay";
 	clock-frequency = <100000>;
+
+	rpr0521@38 {
+		compatible = "rpr0521";
+		reg = <0x38>;
+	};
 };
 
 &i2c10 {
 	status = "okay";
 	clock-frequency = <100000>;
+
+	ti_ina231@40 {
+		compatible = "ti,ina231";
+		reg = <0x40>;
+		/* value is 30mOhm, measured in uohms */
+		shunt-resistor = <30000>;
+	};
 };
 
 &qupv3_id_0 {
