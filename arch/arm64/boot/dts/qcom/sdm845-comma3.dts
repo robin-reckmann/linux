@@ -344,6 +344,29 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	clock-frequency = <400000>;
+};
+
+&i2c5 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&i2c10 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&qupv3_id_0 {
+	status = "okay";
+};
+
 &mss_pil {
 	status = "okay";
 	firmware-name = "qcom/sdm845/mba.mbn", "qcom/sdm845/modem.mbn";
