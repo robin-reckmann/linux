@@ -1509,8 +1509,9 @@ static int hub_configure(struct usb_hub *hub,
 		unit_load = 150;
 		full_load = 900;
 	} else {
-		unit_load = 100;
-		full_load = 500;
+		/* HACK!! */
+		unit_load = 500;
+		full_load = 1000;
 	}
 
 	/* FIXME for USB 3.0, skip for now */
