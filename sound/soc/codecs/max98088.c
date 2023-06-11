@@ -425,6 +425,70 @@ static int max98088_mic2pre_get(struct snd_kcontrol *kcontrol,
        return 0;
 }
 
+static int max98088_eq1_params_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	return 0;
+}
+
+static int max98088_eq1_params_set(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int reg, save, value;
+	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	save = snd_soc_component_read(component, M98088_REG_49_CFG_LEVEL);
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN, 0);
+
+       reg = mc->rreg;
+
+       value = ucontrol->value.integer.value[0];
+
+       snd_soc_component_write(component, reg, M98088_BYTE1(value));
+       snd_soc_component_write(component, reg+1, M98088_BYTE0(value));
+
+       /* Restore the original on/off state */
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN,
+               save);
+
+       return 0;
+
+}
+
+static int max98088_eq2_params_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	return 0;
+}
+static int max98088_eq2_params_set(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int reg, save, value;
+	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	save = snd_soc_component_read(component, M98088_REG_49_CFG_LEVEL);
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN, 0);
+
+       reg = mc->rreg;
+
+       value = ucontrol->value.integer.value[0];
+
+       snd_soc_component_write(component, reg, M98088_BYTE1(value));
+       snd_soc_component_write(component, reg+1, M98088_BYTE0(value));
+
+       /* Restore the original on/off state */
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN,
+               save);
+
+       return 0;
+
+}
+
+
 static const DECLARE_TLV_DB_RANGE(max98088_micboost_tlv,
 	0, 1, TLV_DB_SCALE_ITEM(0, 2000, 0),
 	2, 2, TLV_DB_SCALE_ITEM(3000, 0, 0)
@@ -486,8 +550,126 @@ static const struct snd_kcontrol_new max98088_snd_controls[] = {
        SOC_SINGLE("ADCL Boost Volume", M98088_REG_33_LVL_ADC_L, 4, 3, 0),
        SOC_SINGLE("ADCR Boost Volume", M98088_REG_34_LVL_ADC_R, 4, 3, 0),
 
+       SOC_SINGLE("EQ1 Clip Detection Switch", M98088_REG_30_LVL_DAI1_PLAY_EQ,
+		4, 1, 1),
+       SOC_SINGLE("EQ2 Clip Detection Switch", M98088_REG_32_LVL_DAI2_PLAY_EQ,
+		4, 1, 1),
+
+       SOC_SINGLE("EQ1 Attenuator", M98088_REG_30_LVL_DAI1_PLAY_EQ, 0, 0xf, 0),
+       SOC_SINGLE("EQ2 Attenuator", M98088_REG_32_LVL_DAI2_PLAY_EQ, 0, 0xf, 0),
+
        SOC_SINGLE("EQ1 Switch", M98088_REG_49_CFG_LEVEL, 0, 1, 0),
        SOC_SINGLE("EQ2 Switch", M98088_REG_49_CFG_LEVEL, 1, 1, 0),
+
+	SOC_SINGLE_EXT("EQ1 Band1 K", M98088_REG_52_DAI1_EQ_BASE,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band1 k1", M98088_REG_52_DAI1_EQ_BASE+2,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band1 k2", M98088_REG_52_DAI1_EQ_BASE+4,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band1 c1", M98088_REG_52_DAI1_EQ_BASE+6,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band1 c2", M98088_REG_52_DAI1_EQ_BASE+8,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+
+	SOC_SINGLE_EXT("EQ1 Band2 K", M98088_REG_52_DAI1_EQ_BASE+10,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band2 k1", M98088_REG_52_DAI1_EQ_BASE+12,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band2 k2", M98088_REG_52_DAI1_EQ_BASE+14,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band2 c1", M98088_REG_52_DAI1_EQ_BASE+16,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band2 c2", M98088_REG_52_DAI1_EQ_BASE+18,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+
+	SOC_SINGLE_EXT("EQ1 Band3 K", M98088_REG_52_DAI1_EQ_BASE+20,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band3 k1", M98088_REG_52_DAI1_EQ_BASE+22,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band3 k2", M98088_REG_52_DAI1_EQ_BASE+24,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band3 c1", M98088_REG_52_DAI1_EQ_BASE+26,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band3 c2", M98088_REG_52_DAI1_EQ_BASE+28,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+
+	SOC_SINGLE_EXT("EQ1 Band4 K", M98088_REG_52_DAI1_EQ_BASE+30,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band4 k1", M98088_REG_52_DAI1_EQ_BASE+32,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band4 k2", M98088_REG_52_DAI1_EQ_BASE+34,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band4 c1", M98088_REG_52_DAI1_EQ_BASE+36,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band4 c2", M98088_REG_52_DAI1_EQ_BASE+38,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+
+	SOC_SINGLE_EXT("EQ1 Band5 K", M98088_REG_52_DAI1_EQ_BASE+40,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band5 k1", M98088_REG_52_DAI1_EQ_BASE+42,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band5 k2", M98088_REG_52_DAI1_EQ_BASE+44,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band5 c1", M98088_REG_52_DAI1_EQ_BASE+46,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+	SOC_SINGLE_EXT("EQ1 Band5 c2", M98088_REG_52_DAI1_EQ_BASE+48,
+		 0, 0xffff, 0, max98088_eq1_params_get, max98088_eq1_params_set),
+
+	SOC_SINGLE_EXT("EQ2 Band1 K", M98088_REG_84_DAI2_EQ_BASE,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band1 k1", M98088_REG_84_DAI2_EQ_BASE+2,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band1 k2", M98088_REG_84_DAI2_EQ_BASE+4,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band1 c1", M98088_REG_84_DAI2_EQ_BASE+6,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band1 c2", M98088_REG_84_DAI2_EQ_BASE+8,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+
+	SOC_SINGLE_EXT("EQ2 Band2 K", M98088_REG_84_DAI2_EQ_BASE+10,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band2 k1", M98088_REG_84_DAI2_EQ_BASE+12,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band2 k2", M98088_REG_84_DAI2_EQ_BASE+14,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band2 c1", M98088_REG_84_DAI2_EQ_BASE+16,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band2 c2", M98088_REG_84_DAI2_EQ_BASE+18,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+
+	SOC_SINGLE_EXT("EQ2 Band3 K", M98088_REG_84_DAI2_EQ_BASE+20,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band3 k1", M98088_REG_84_DAI2_EQ_BASE+22,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band3 k2", M98088_REG_84_DAI2_EQ_BASE+24,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band3 c1", M98088_REG_84_DAI2_EQ_BASE+26,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band3 c2", M98088_REG_84_DAI2_EQ_BASE+28,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+
+	SOC_SINGLE_EXT("EQ2 Band4 K", M98088_REG_84_DAI2_EQ_BASE+30,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band4 k1", M98088_REG_84_DAI2_EQ_BASE+32,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band4 k2", M98088_REG_84_DAI2_EQ_BASE+34,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band4 c1", M98088_REG_84_DAI2_EQ_BASE+36,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band4 c2", M98088_REG_84_DAI2_EQ_BASE+38,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+
+	SOC_SINGLE_EXT("EQ2 Band5 K", M98088_REG_84_DAI2_EQ_BASE+40,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band5 k1", M98088_REG_84_DAI2_EQ_BASE+42,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band5 k2", M98088_REG_84_DAI2_EQ_BASE+44,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band5 c1", M98088_REG_84_DAI2_EQ_BASE+46,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
+	SOC_SINGLE_EXT("EQ2 Band5 c2", M98088_REG_84_DAI2_EQ_BASE+48,
+		 0, 0xffff, 0, max98088_eq2_params_get, max98088_eq2_params_set),
 
        SOC_ENUM("EX Limiter Mode", max98088_exmode_enum),
        SOC_ENUM("EX Limiter Threshold", max98088_ex_thresh_enum),
@@ -605,6 +787,8 @@ static const struct snd_kcontrol_new max98088_left_ADC_mixer_controls[] = {
        SOC_DAPM_SINGLE("INA2 Switch", M98088_REG_23_MIX_ADC_LEFT, 2, 1, 0),
        SOC_DAPM_SINGLE("INB1 Switch", M98088_REG_23_MIX_ADC_LEFT, 1, 1, 0),
        SOC_DAPM_SINGLE("INB2 Switch", M98088_REG_23_MIX_ADC_LEFT, 0, 1, 0),
+       SOC_DAPM_SINGLE("DIGMICL Switch", M98088_REG_48_CFG_MIC, 5, 1, 0),
+       SOC_DAPM_SINGLE("DIGMICR Switch", M98088_REG_48_CFG_MIC, 4, 1, 0),
 };
 
 /* Right ADC mixer switch */
@@ -615,6 +799,8 @@ static const struct snd_kcontrol_new max98088_right_ADC_mixer_controls[] = {
        SOC_DAPM_SINGLE("INA2 Switch", M98088_REG_24_MIX_ADC_RIGHT, 2, 1, 0),
        SOC_DAPM_SINGLE("INB1 Switch", M98088_REG_24_MIX_ADC_RIGHT, 1, 1, 0),
        SOC_DAPM_SINGLE("INB2 Switch", M98088_REG_24_MIX_ADC_RIGHT, 0, 1, 0),
+       SOC_DAPM_SINGLE("DIGMICL Switch", M98088_REG_48_CFG_MIC, 5, 1, 0),
+       SOC_DAPM_SINGLE("DIGMICR Switch", M98088_REG_48_CFG_MIC, 4, 1, 0),
 };
 
 static int max98088_mic_event(struct snd_soc_dapm_widget *w,
@@ -640,6 +826,12 @@ static int max98088_mic_event(struct snd_soc_dapm_widget *w,
                return -EINVAL;
        }
 
+       return 0;
+}
+
+static int max98088_digmic_event(struct snd_soc_dapm_widget *w,
+                            struct snd_kcontrol *kcontrol, int event)
+{
        return 0;
 }
 
@@ -800,6 +992,14 @@ static const struct snd_soc_dapm_widget max98088_dapm_widgets[] = {
                6, 0, NULL, 0, max98088_pga_inb2_event,
                SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 
+       SND_SOC_DAPM_PGA_E("DIGMICL Input", M98088_REG_48_CFG_MIC,
+               5, 0, NULL, 0, max98088_digmic_event,
+               SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+
+       SND_SOC_DAPM_PGA_E("DIGMICR Input", M98088_REG_48_CFG_MIC,
+               4, 0, NULL, 0, max98088_digmic_event,
+               SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+
        SND_SOC_DAPM_MICBIAS("MICBIAS", M98088_REG_4C_PWR_EN_IN, 3, 0),
 
        SND_SOC_DAPM_OUTPUT("HPL"),
@@ -815,6 +1015,8 @@ static const struct snd_soc_dapm_widget max98088_dapm_widgets[] = {
        SND_SOC_DAPM_INPUT("INA2"),
        SND_SOC_DAPM_INPUT("INB1"),
        SND_SOC_DAPM_INPUT("INB2"),
+       SND_SOC_DAPM_INPUT("DIGMICL"),
+       SND_SOC_DAPM_INPUT("DIGMICR"),
 };
 
 static const struct snd_soc_dapm_route max98088_audio_map[] = {
@@ -911,6 +1113,8 @@ static const struct snd_soc_dapm_route max98088_audio_map[] = {
        {"Left ADC Mixer", "INA2 Switch", "INA2 Input"},
        {"Left ADC Mixer", "INB1 Switch", "INB1 Input"},
        {"Left ADC Mixer", "INB2 Switch", "INB2 Input"},
+       {"Left ADC Mixer", "DIGMICL Switch", "DIGMICL Input"},
+       {"Left ADC Mixer", "DIGMICR Switch", "DIGMICR Input"},
 
        /* Right ADC input mixer */
        {"Right ADC Mixer", "MIC1 Switch", "MIC1 Input"},
@@ -919,6 +1123,8 @@ static const struct snd_soc_dapm_route max98088_audio_map[] = {
        {"Right ADC Mixer", "INA2 Switch", "INA2 Input"},
        {"Right ADC Mixer", "INB1 Switch", "INB1 Input"},
        {"Right ADC Mixer", "INB2 Switch", "INB2 Input"},
+       {"Right ADC Mixer", "DIGMICL Switch", "DIGMICL Input"},
+       {"Right ADC Mixer", "DIGMICR Switch", "DIGMICR Input"},
 
        /* Inputs */
        {"ADCL", NULL, "Left ADC Mixer"},
@@ -929,6 +1135,8 @@ static const struct snd_soc_dapm_route max98088_audio_map[] = {
        {"INB2 Input", NULL, "INB2"},
        {"MIC1 Input", NULL, "MIC1"},
        {"MIC2 Input", NULL, "MIC2"},
+       {"DIGMICL Input", NULL, "DIGMICL"},
+       {"DIGMICR Input", NULL, "DIGMICR"},
 };
 
 /* codec mclk clock divider coefficients */
@@ -1065,8 +1273,6 @@ static int max98088_dai2_hw_params(struct snd_pcm_substream *substream,
        if (rate_value(rate, &regval))
                return -EINVAL;
 
-       snd_soc_component_update_bits(component, M98088_REG_19_DAI2_CLKMODE,
-               M98088_CLKMODE_MASK, regval);
        cdata->rate = rate;
 
        /* Configure NI when operating as master */
@@ -1151,7 +1357,6 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
        struct snd_soc_component *component = codec_dai->component;
        struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
-       u8 reg15val;
        u8 reg14val = 0;
 
        cdata = &max98088->dai[0];
@@ -1205,11 +1410,6 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
                snd_soc_component_update_bits(component, M98088_REG_14_DAI1_FORMAT,
                        M98088_DAI_MAS | M98088_DAI_DLY | M98088_DAI_BCI |
                        M98088_DAI_WCI, reg14val);
-
-               reg15val = M98088_DAI_BSEL64;
-               if (max98088->digmic)
-                       reg15val |= M98088_DAI_OSR64;
-               snd_soc_component_write(component, M98088_REG_15_DAI1_CLOCK, reg15val);
        }
 
        return 0;
@@ -1274,9 +1474,6 @@ static int max98088_dai2_set_fmt(struct snd_soc_dai *codec_dai,
                snd_soc_component_update_bits(component, M98088_REG_1C_DAI2_FORMAT,
                        M98088_DAI_MAS | M98088_DAI_DLY | M98088_DAI_BCI |
                        M98088_DAI_WCI, reg1Cval);
-
-               snd_soc_component_write(component, M98088_REG_1D_DAI2_CLOCK,
-                       M98088_DAI_BSEL64);
        }
 
        return 0;
@@ -1698,17 +1895,16 @@ static int max98088_probe(struct snd_soc_component *component)
        snd_soc_component_write(component, M98088_REG_0F_IRQ_ENABLE, 0x00);
 
        snd_soc_component_write(component, M98088_REG_22_MIX_DAC,
-               M98088_DAI1L_TO_DACL|M98088_DAI2L_TO_DACL|
-               M98088_DAI1R_TO_DACR|M98088_DAI2R_TO_DACR);
+               M98088_DAI2L_TO_DACR);
 
        snd_soc_component_write(component, M98088_REG_4E_BIAS_CNTL, 0xF0);
        snd_soc_component_write(component, M98088_REG_50_DAC_BIAS2, 0x0F);
 
        snd_soc_component_write(component, M98088_REG_16_DAI1_IOCFG,
-               M98088_S1NORMAL|M98088_SDATA);
+               M98088_S2NORMAL|M98088_SDATA);
 
        snd_soc_component_write(component, M98088_REG_1E_DAI2_IOCFG,
-               M98088_S2NORMAL|M98088_SDATA);
+               M98088_S1NORMAL|M98088_SDATA);
 
        max98088_handle_pdata(component);
 
