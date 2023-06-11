@@ -3190,6 +3190,128 @@
 				};
 			};
 
+			sec_mi2s_mclk_sleep: sec-mi2s-mclk-sleep-state {
+				pins = "gpio79";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			sec_mi2s_mclk_active: sec-mi2s-mclk-active-state {
+				pins = "gpio79";
+				function = "sec_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			sec_mi2s_sleep: sec-mi2s-sleep-state {
+				pins = "gpio80", "gpio81";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			sec_mi2s_active: sec-mi2s-active-state {
+				pins = "gpio80", "gpio81";
+				function = "sec_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+				output-high;
+			};
+
+			sec_mi2s_sd0_sleep: sec-mi2s-sd0-sleep-state {
+				pins = "gpio82";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			sec_mi2s_sd0_active: sec-mi2s-sd0-active-state {
+				pins = "gpio82";
+				function = "sec_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			sec_mi2s_sd1_sleep: sec-mi2s-sd1-sleep-state {
+				pins = "gpio83";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			sec_mi2s_sd1_active: sec-mi2s-sd1-active-state {
+				pins = "gpio83";
+				function = "sec_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			tert_mi2s_mclk_sleep: tert-mi2s-mclk-sleep-state {
+				pins = "gpio74";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			tert_mi2s_mclk_active: tert-mi2s-mclk-active-state {
+				pins = "gpio74";
+				function = "tert_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			tert_mi2s_sleep: tert-mi2s-sleep-state {
+				pins = "gpio75", "gpio76";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			tert_mi2s_active: tert-mi2s-active-state {
+				pins = "gpio75", "gpio76";
+				function = "ter_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+				output-high;
+			};
+
+			tert_mi2s_sd0_sleep: tert-mi2s-sd0-sleep-state {
+				pins = "gpio77";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			tert_mi2s_sd0_active: tert-mi2s-sd0-active-state {
+				pins = "gpio77";
+				function = "ter_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			tert_mi2s_sd1_sleep: tert-mi2s-sd1-sleep-state {
+				pins = "gpio78";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+
+			tert_mi2s_sd1_active: tert-mi2s-sd1-active-state {
+				pins = "gpio78";
+				function = "ter_mi2s";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
 			quat_mi2s_sleep: quat-mi2s-sleep-state {
 				pins = "gpio58", "gpio59";
 				function = "gpio";
