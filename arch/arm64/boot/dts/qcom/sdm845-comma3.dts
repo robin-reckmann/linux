@@ -1,6 +1,9 @@
 /dts-v1/;
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/sound/qcom,q6afe.h>
+#include <dt-bindings/sound/qcom,q6asm.h>
+
 #include "sdm845.dtsi"
 #include "pm8998.dtsi"
 #include "pmi8998.dtsi"
@@ -15,6 +18,19 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
+	};
+
+	main5v: main5v {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "main5v";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		gpio = <&tlmm 25 0>;
+		enable-active-high;
+		regulator-always-on;
 	};
 
 	ssd3v3: ssd3v3 {
@@ -52,6 +68,11 @@
 
 		vin-supply = <&vph_pwr>;
 	};
+};
+
+&adsp_pas {
+	status = "okay";
+	firmware-name = "qcom/sdm845/adsp.mbn";
 };
 
 &apps_rsc {
@@ -381,6 +402,15 @@
 	status = "okay";
 	clock-frequency = <100000>;
 
+	max98089_codec: max98089@10 {
+		compatible = "maxim,max98089";
+		reg = <0x10>;
+		#sound-dai-cells = <1>;
+
+		clocks = <&rpmhcc RPMH_LN_BB_CLK2>;
+		clock-names = "mclk";
+	};
+
 	ti_ina231@40 {
 		compatible = "ti,ina231";
 		reg = <0x40>;
@@ -402,6 +432,28 @@
 	vdda-pll-supply = <&vdda_pcie_1p2>;
 };
 
+&q6afedai {
+	qi2s@18 {
+		reg = <SECONDARY_MI2S_RX>;
+		qcom,sd-lines = <0>;
+	};
+
+	qi2s@21 {
+		reg = <TERTIARY_MI2S_TX>;
+		qcom,sd-lines = <0>;
+	};
+};
+
+&q6asmdai {
+	dai@0 {
+		reg = <0>;
+	};
+
+	dai@1 {
+		reg = <1>;
+	};
+};
+
 &qupv3_id_0 {
 	status = "okay";
 };
@@ -413,6 +465,61 @@
 
 &qupv3_id_1 {
 	status = "okay";
+};
+
+&sound {
+	compatible = "qcom,sdm845-sndcard";
+	model = "comma-three";
+
+	pinctrl-0 = <&sec_mi2s_active &sec_mi2s_sd0_active
+		&tert_mi2s_active &tert_mi2s_sd0_active>;
+	pinctrl-names = "default";
+
+	status = "okay";
+
+	mm1-dai-link {
+		link-name = "MultiMedia1";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+		};
+	};
+
+	mm2-dai-link {
+		link-name = "MultiMedia2";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+		};
+	};
+
+	speaker_playback_dai: speaker-dai-link {
+		link-name = "Speaker Playback";
+		cpu {
+			sound-dai = <&q6afedai SECONDARY_MI2S_RX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			 sound-dai = <&max98089_codec 1>;
+		};
+	};
+
+	capture-dai-link {
+		link-name = "Capture";
+		cpu {
+			sound-dai = <&q6afedai TERTIARY_MI2S_TX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			 sound-dai = <&max98089_codec 0>;
+		};
+	};
 };
 
 &uart9 {
