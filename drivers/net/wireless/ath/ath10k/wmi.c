@@ -5529,7 +5529,7 @@ static void ath10k_wmi_event_service_ready_work(struct work_struct *work)
 	ar->hw_min_tx_power = __le32_to_cpu(arg.min_tx_power);
 	ar->hw_max_tx_power = __le32_to_cpu(arg.max_tx_power);
 	ar->ht_cap_info = __le32_to_cpu(arg.ht_cap);
-	ar->vht_cap_info = __le32_to_cpu(arg.vht_cap);
+	ar->vht_cap_info = (__le32_to_cpu(arg.vht_cap) & 0xfffffff0);
 	ar->vht_supp_mcs = __le32_to_cpu(arg.vht_supp_mcs);
 	ar->fw_version_major =
 		(__le32_to_cpu(arg.sw_ver0) & 0xff000000) >> 24;
