@@ -177,3 +177,7 @@ sphinx_*/
 
 # Rust analyzer configuration
 /rust-project.json
+
+linux-*.deb
+linux-*.buildinfo
+linux-*.changes
