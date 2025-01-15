@@ -15,6 +15,18 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	ssd3v3: ssd3v3 {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "ssd3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+
+		gpio = <&tlmm 41 0>;
+		enable-active-high;
+	};
+
 	vph_pwr: vph-pwr-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vph_pwr";
@@ -411,6 +423,24 @@
 	};
 };
 
+&pcie1 {
+	status = "okay";
+
+	perst-gpios = <&tlmm 102 GPIO_ACTIVE_LOW>;
+
+	vddpe-3v3-supply = <&ssd3v3>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie1_default_state>;
+};
+
+&pcie1_phy {
+	status = "okay";
+
+	vdda-phy-supply = <&vdda_pcie_core>;
+	vdda-pll-supply = <&vdda_pcie_1p2>;
+};
+
 &qupv3_id_0 {
 	status = "okay";
 };
@@ -435,6 +465,28 @@
 
 	vcc-supply = <&vreg_l20a_2p95>;
 	vcc-max-microamp = <600000>;
+};
+
+&tlmm {
+	pcie1_default_state: pcie1-default-state {
+		clkreq-pins {
+			pins = "gpio103";
+			function = "pci_e1";
+			bias-pull-up;
+		};
+		perst-n-pins {
+			pins = "gpio102";
+			function = "gpio";
+			drive-strength = <16>;
+			bias-pull-down;
+		};
+		wake-n-pins {
+			pins = "gpio104";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
 };
 
 &ufs_mem_phy {
