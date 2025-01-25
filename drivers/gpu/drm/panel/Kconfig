@@ -658,6 +658,16 @@ config DRM_PANEL_SAMSUNG_S6E3FA7
 	  Say Y here if you want to enable support for the Samsung S6E3FA7
 	  1920x2220 panel.
 
+config DRM_PANEL_SAMSUNG_EA8074
+   tristate "SAMSUNG EA8074 panel"
+   depends on OF
+   depends on DRM_MIPI_DSI
+   depends on BACKLIGHT_CLASS_DEVICE
+   select VIDEOMODE_HELPERS
+   help
+     Say Y here if you want to enable support for the SAMSUNG EA8074
+     panel.
+
 config DRM_PANEL_SAMSUNG_S6D16D0
 	tristate "Samsung S6D16D0 DSI video mode panel"
 	depends on OF
