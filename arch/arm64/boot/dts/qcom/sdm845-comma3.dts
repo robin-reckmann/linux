@@ -699,6 +699,11 @@
 	vdda-pll-supply = <&vdda_usb2_ss_core>;
 };
 
+&venus {
+	firmware-name = "qcom/venus-5.2/venus.mbn";
+	status = "okay";
+};
+
 &wifi {
 	status = "okay";
 
