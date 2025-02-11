@@ -54,7 +54,6 @@
 		regulator-max-microvolt = <3300000>;
 
 		gpio = <&pm8998_gpios 10 0>;
-		regulator-boot-on;
 	};
 
 	vph_pwr: vph-pwr-regulator {
