@@ -20,8 +20,28 @@
 #define OTG_CFG				0x53
 #define OTG_EN_SRC_CFG			BIT(1)
 
-static const unsigned int curr_table[] = {
+struct msm_vbus_desc {
+	const unsigned int *curr_table;
+	unsigned int n_current_limits;
+};
+
+static const unsigned int curr_table_pm8150b[] = {
 	500000, 1000000, 1500000, 2000000, 2500000, 3000000,
+};
+
+static const unsigned int curr_table_pmi8998[] = {
+	250000, 500000, 750000, 1000000,
+	1250000, 1500000, 1750000, 2000000,
+};
+
+static const struct msm_vbus_desc msm_vbus_desc_pm8150b = {
+	.curr_table = curr_table_pm8150b,
+	.n_current_limits = ARRAY_SIZE(curr_table_pm8150b),
+};
+
+static const struct msm_vbus_desc msm_vbus_desc_pmi8998 = {
+	.curr_table = curr_table_pmi8998,
+	.n_current_limits = ARRAY_SIZE(curr_table_pmi8998),
 };
 
 static const struct regulator_ops qcom_usb_vbus_reg_ops = {
@@ -37,8 +57,6 @@ static struct regulator_desc qcom_usb_vbus_rdesc = {
 	.ops = &qcom_usb_vbus_reg_ops,
 	.owner = THIS_MODULE,
 	.type = REGULATOR_VOLTAGE,
-	.curr_table = curr_table,
-	.n_current_limits = ARRAY_SIZE(curr_table),
 };
 
 static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
@@ -48,6 +66,7 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	struct regmap *regmap;
 	struct regulator_config config = { };
 	struct regulator_init_data *init_data;
+	const struct msm_vbus_desc *quirks;
 	int ret;
 	u32 base;
 
@@ -68,6 +87,12 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	if (!init_data)
 		return -ENOMEM;
 
+	quirks = of_device_get_match_data(dev);
+	if (!quirks)
+		return -ENODEV;
+
+	qcom_usb_vbus_rdesc.curr_table = quirks->curr_table;
+	qcom_usb_vbus_rdesc.n_current_limits = quirks->n_current_limits;
 	qcom_usb_vbus_rdesc.enable_reg = base + CMD_OTG;
 	qcom_usb_vbus_rdesc.enable_mask = OTG_EN;
 	qcom_usb_vbus_rdesc.csel_reg = base + OTG_CURRENT_LIMIT_CFG;
@@ -80,18 +105,21 @@ static int qcom_usb_vbus_regulator_probe(struct platform_device *pdev)
 	rdev = devm_regulator_register(dev, &qcom_usb_vbus_rdesc, &config);
 	if (IS_ERR(rdev)) {
 		ret = PTR_ERR(rdev);
-		dev_err(dev, "not able to register vbus reg %d\n", ret);
+		dev_err(dev, "Failed to register vbus reg %d\n", ret);
 		return ret;
 	}
 
 	/* Disable HW logic for VBUS enable */
 	regmap_update_bits(regmap, base + OTG_CFG, OTG_EN_SRC_CFG, 0);
 
+	dev_dbg(dev, "Registered QCOM VBUS regulator\n");
+
 	return 0;
 }
 
 static const struct of_device_id qcom_usb_vbus_regulator_match[] = {
-	{ .compatible = "qcom,pm8150b-vbus-reg" },
+	{ .compatible = "qcom,pm8150b-vbus-reg", .data = &msm_vbus_desc_pm8150b },
+	{ .compatible = "qcom,pmi8998-vbus-reg", .data = &msm_vbus_desc_pmi8998 },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, qcom_usb_vbus_regulator_match);
