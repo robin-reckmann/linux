@@ -1,4 +1,3 @@
-
 #include <linux/clk.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
@@ -14,28 +13,28 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 
-#define PIXEL_RATE			88000000ULL
+#define PIXEL_RATE 88000000ULL
 
 /* Chip ID */
-#define AR0231_REG_CHIP_ID		CCI_REG16(0x3000)
-#define AR0231_CHIP_ID			0x0354
+#define AR0231_REG_CHIP_ID CCI_REG16(0x3000)
+#define AR0231_CHIP_ID 0x0354
 
-#define AR0231_COARSE_INTEGRATION_TIME	CCI_REG16(0x3012)
+#define AR0231_COARSE_INTEGRATION_TIME CCI_REG16(0x3012)
 
 #define AR0231_ANALOG_GAIN CCI_REG16(0x3366)
 
-#define AR0231_REG_MODE_SELECT		CCI_REG16(0x301a)
-#define AR0231_MODE_RESET		0x0018
-#define AR0231_MODE_STANDBY		0x0918
-#define AR0231_MODE_STREAMING		0x091C
+#define AR0231_REG_MODE_SELECT CCI_REG16(0x301a)
+#define AR0231_MODE_RESET 0x0018
+#define AR0231_MODE_STANDBY 0x0918
+#define AR0231_MODE_STREAMING 0x091C
 
-#define AR0231_REG_VTS			CCI_REG16(0x300a)
-#define AR0231_VTS_MAX			0xffff
+#define AR0231_REG_VTS CCI_REG16(0x300a)
+#define AR0231_VTS_MAX 0xffff
 
-#define AR0231_NATIVE_WIDTH		1928
-#define AR0231_NATIVE_HEIGHT		1208
+#define AR0231_NATIVE_WIDTH 1928
+#define AR0231_NATIVE_HEIGHT 1208
 
-#define to_AR0231(_sd)	container_of(_sd, struct AR0231, sd)
+#define to_AR0231(_sd) container_of(_sd, struct AR0231, sd)
 
 struct AR0231_reg_list {
 	u32 num_of_regs;
@@ -82,11 +81,13 @@ static const struct cci_reg_sequence mode_default[] = {
 
 	// Enable external trigger and disable GPIO outputs
 	// { CCI_REG16(0x30CE), 0x0120}, // SLAVE_SH_SYNC_MODE | FRAME_START_MODE
-	{ CCI_REG16(0x340A), 0xE0 },   // GPIO3_INPUT_DISABLE | GPIO2_INPUT_DISABLE | GPIO1_INPUT_DISABLE
-	{ CCI_REG16(0x340C), 0x802 },  // GPIO_HIDRV_EN | GPIO0_ISEL=2
+	{ CCI_REG16(0x340A),
+	  0xE0 }, // GPIO3_INPUT_DISABLE | GPIO2_INPUT_DISABLE | GPIO1_INPUT_DISABLE
+	{ CCI_REG16(0x340C), 0x802 }, // GPIO_HIDRV_EN | GPIO0_ISEL=2
 
 	// Readout timing
-	{ CCI_REG16(0x300C), 0x0672 }, // LINE_LENGTH_PCK (valid for 3-exposure HDR)
+	{ CCI_REG16(0x300C),
+	  0x0672 }, // LINE_LENGTH_PCK (valid for 3-exposure HDR)
 	{ CCI_REG16(0x300A), 0x0855 }, // FRAME_LENGTH_LINES
 	{ CCI_REG16(0x3042), 0x0000 }, // EXTRA_DELAY
 
@@ -184,10 +185,10 @@ static const struct AR0231_mode AR0231_modes[] = {
 	},
 };
 
-static const char* const AR0231_supplies[] = {
-	"vaa",		/* Analog supply */
-	"vdd_io",	/* I/O Digital supply */
-	"vdd",		/* Core Digital supply */
+static const char *const AR0231_supplies[] = {
+	"vaa", /* Analog supply */
+	"vdd_io", /* I/O Digital supply */
+	"vdd", /* Core Digital supply */
 };
 
 struct AR0231 {
@@ -224,8 +225,8 @@ static int AR0231_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_ANALOGUE_GAIN:
-		ret = cci_write(AR0231->cci, AR0231_ANALOG_GAIN, 
-			0xFF00 | ctrl->val << 4 | ctrl->val , &ret);
+		ret = cci_write(AR0231->cci, AR0231_ANALOG_GAIN,
+				0xFF00 | ctrl->val << 4 | ctrl->val, &ret);
 		break;
 	case V4L2_CID_VBLANK:
 		ret = cci_write(AR0231->cci, AR0231_REG_VTS,
@@ -233,7 +234,7 @@ static int AR0231_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_EXPOSURE:
 		ret = cci_write(AR0231->cci, AR0231_COARSE_INTEGRATION_TIME,
-			  ctrl->val, &ret);
+				ctrl->val, &ret);
 		break;
 	default:
 		ret = -EINVAL;
@@ -266,8 +267,7 @@ static int AR0231_init_controls(struct AR0231 *AR0231)
 		return ret;
 
 	link_freq_size = ARRAY_SIZE(link_freq_menu_items) - 1;
-	AR0231->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr,
-						   &AR0231_ctrl_ops,
+	AR0231->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr, &AR0231_ctrl_ops,
 						   V4L2_CID_LINK_FREQ,
 						   link_freq_size, 0,
 						   link_freq_menu_items);
@@ -275,10 +275,8 @@ static int AR0231_init_controls(struct AR0231 *AR0231)
 		AR0231->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	AR0231->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
-					       V4L2_CID_PIXEL_RATE,
-					       PIXEL_RATE,
-					       PIXEL_RATE, 1,
-					       PIXEL_RATE);
+					       V4L2_CID_PIXEL_RATE, PIXEL_RATE,
+					       PIXEL_RATE, 1, PIXEL_RATE);
 	if (AR0231->pixel_rate)
 		AR0231->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -293,11 +291,11 @@ static int AR0231_init_controls(struct AR0231 *AR0231)
 	if (AR0231->hblank)
 		AR0231->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
-			  V4L2_CID_ANALOGUE_GAIN, 0, 15, 1, 7);
+	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+			  0, 15, 1, 7);
 
-	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
-			  V4L2_CID_EXPOSURE, 2, 0x0855, 1, 5);
+	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops, V4L2_CID_EXPOSURE, 2,
+			  0x0855, 1, 5);
 
 	if (ctrl_hdlr->error)
 		return ctrl_hdlr->error;
@@ -332,8 +330,8 @@ static int AR0231_start_streaming(struct AR0231 *AR0231)
 	int link_freq_index, ret;
 	u64 val;
 
-	ret = cci_write(AR0231->cci, AR0231_REG_MODE_SELECT,
-			AR0231_MODE_RESET, NULL);
+	ret = cci_write(AR0231->cci, AR0231_REG_MODE_SELECT, AR0231_MODE_RESET,
+			NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to reset");
 		return ret;
@@ -352,7 +350,7 @@ static int AR0231_start_streaming(struct AR0231 *AR0231)
 		return ret;
 
 	ret = cci_write(AR0231->cci, AR0231_REG_MODE_SELECT,
-		AR0231_MODE_STREAMING, NULL);
+			AR0231_MODE_STREAMING, NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to start stream");
 		return ret;
@@ -364,7 +362,7 @@ static int AR0231_start_streaming(struct AR0231 *AR0231)
 static int AR0231_stop_streaming(struct AR0231 *AR0231)
 {
 	return cci_write(AR0231->cci, AR0231_REG_MODE_SELECT,
-			AR0231_MODE_STANDBY, NULL);
+			 AR0231_MODE_STANDBY, NULL);
 }
 
 static int AR0231_set_stream(struct v4l2_subdev *sd, int enable)
@@ -377,10 +375,10 @@ static int AR0231_set_stream(struct v4l2_subdev *sd, int enable)
 		ret = pm_runtime_resume_and_get(&client->dev);
 		if (ret < 0)
 			return ret;
-		
+
 		ret = AR0231_start_streaming(AR0231);
 		if (ret)
-		goto error_rpm_put;
+			goto error_rpm_put;
 	} else {
 		AR0231_stop_streaming(AR0231);
 		pm_runtime_put(&client->dev);
@@ -395,8 +393,8 @@ error_rpm_put:
 }
 
 static int AR0231_get_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_state *sd_state,
-	struct v4l2_subdev_format *fmt)
+			  struct v4l2_subdev_state *sd_state,
+			  struct v4l2_subdev_format *fmt)
 {
 	struct AR0231 *AR0231 = to_AR0231(sd);
 
@@ -406,8 +404,8 @@ static int AR0231_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int AR0231_set_fmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *sd_state,
-			     struct v4l2_subdev_format *fmt)
+			  struct v4l2_subdev_state *sd_state,
+			  struct v4l2_subdev_format *fmt)
 {
 	struct AR0231 *AR0231 = to_AR0231(sd);
 	struct v4l2_rect *crop;
@@ -415,8 +413,7 @@ static int AR0231_set_fmt(struct v4l2_subdev *sd,
 	s64 hblank;
 	int ret;
 
-	mode = v4l2_find_nearest_size(AR0231_modes,
-				      ARRAY_SIZE(AR0231_modes),
+	mode = v4l2_find_nearest_size(AR0231_modes, ARRAY_SIZE(AR0231_modes),
 				      width, height, fmt->format.width,
 				      fmt->format.height);
 
@@ -429,8 +426,8 @@ static int AR0231_set_fmt(struct v4l2_subdev *sd,
 		__v4l2_ctrl_s_ctrl(AR0231->link_freq, mode->link_freq_index);
 
 		hblank = AR0231->cur_mode->hblank;
-		__v4l2_ctrl_modify_range(AR0231->hblank, hblank, hblank,
-					 1, hblank);
+		__v4l2_ctrl_modify_range(AR0231->hblank, hblank, hblank, 1,
+					 hblank);
 
 		__v4l2_ctrl_modify_range(AR0231->vblank, 0,
 					 AR0231_VTS_MAX - mode->height, 1,
@@ -557,8 +554,8 @@ static int AR0231_parse_hw_config(struct AR0231 *AR0231)
 		return dev_err_probe(AR0231->dev, PTR_ERR(AR0231->clk),
 				     "Failed to get clock\n");
 
-	AR0231->reset_gpio = devm_gpiod_get_optional(AR0231->dev, "reset",
-						     GPIOD_OUT_LOW);
+	AR0231->reset_gpio =
+		devm_gpiod_get_optional(AR0231->dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(AR0231->reset_gpio))
 		return dev_err_probe(AR0231->dev, PTR_ERR(AR0231->reset_gpio),
 				     "Failed to get reset gpio\n");
@@ -571,7 +568,8 @@ static int AR0231_parse_hw_config(struct AR0231 *AR0231)
 	if (ret)
 		return dev_err_probe(AR0231->dev, ret, "Cannot get supplies\n");
 
-	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(AR0231->dev), NULL);
+	endpoint =
+		fwnode_graph_get_next_endpoint(dev_fwnode(AR0231->dev), NULL);
 	if (!endpoint) {
 		dev_err(AR0231->dev, "endpoint node not found\n");
 		return -EPROBE_DEFER;
@@ -777,19 +775,18 @@ static void AR0231_remove(struct i2c_client *client)
 
 	pm_runtime_disable(&client->dev);
 	if (!pm_runtime_status_suspended(&client->dev))
-		AR0231_power_off(&client->dev);	
+		AR0231_power_off(&client->dev);
 	pm_runtime_set_suspended(&client->dev);
 }
 
 static const struct of_device_id AR0231_of_match[] = {
 	{ .compatible = "onnn,AR0231" },
-	{ }
+	{}
 };
 MODULE_DEVICE_TABLE(of, AR0231_of_match);
 
-static const struct dev_pm_ops AR0231_pm_ops = {
-	SET_RUNTIME_PM_OPS(AR0231_power_off, AR0231_power_on, NULL)
-};
+static const struct dev_pm_ops AR0231_pm_ops = { SET_RUNTIME_PM_OPS(
+	AR0231_power_off, AR0231_power_on, NULL) };
 
 static struct i2c_driver AR0231_i2c_driver = {
 	.driver = {
