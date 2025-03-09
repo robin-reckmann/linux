@@ -34,14 +34,14 @@
 #define AR0231_NATIVE_WIDTH 1928
 #define AR0231_NATIVE_HEIGHT 1208
 
-#define to_AR0231(_sd) container_of(_sd, struct AR0231, sd)
+#define to_ar0231(_sd) container_of(_sd, struct ar0231, sd)
 
-struct AR0231_reg_list {
+struct ar0231_reg_list {
 	u32 num_of_regs;
 	const struct cci_reg_sequence *regs;
 };
 
-struct AR0231_mode {
+struct ar0231_mode {
 	u32 width;
 	u32 height;
 
@@ -52,7 +52,7 @@ struct AR0231_mode {
 	u32 vblank;
 
 	/* Sensor register settings for this mode */
-	const struct AR0231_reg_list reg_list;
+	const struct ar0231_reg_list reg_list;
 };
 
 static const struct cci_reg_sequence mode_default[] = {
@@ -170,7 +170,7 @@ static const s64 link_freq_menu_items[] = {
 	528000000ULL,
 };
 
-static const struct AR0231_mode AR0231_modes[] = {
+static const struct ar0231_mode ar0231_modes[] = {
 	{
 		.width = AR0231_NATIVE_WIDTH,
 		.height = AR0231_NATIVE_HEIGHT,
@@ -185,13 +185,13 @@ static const struct AR0231_mode AR0231_modes[] = {
 	},
 };
 
-static const char *const AR0231_supplies[] = {
+static const char *const ar0231_supplies[] = {
 	"vaa", /* Analog supply */
 	"vdd_io", /* I/O Digital supply */
 	"vdd", /* Core Digital supply */
 };
 
-struct AR0231 {
+struct ar0231 {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler ctrl_handler;
@@ -208,16 +208,16 @@ struct AR0231 {
 	struct regmap *cci;
 	struct clk *clk;
 	struct gpio_desc *reset_gpio;
-	struct regulator_bulk_data supplies[ARRAY_SIZE(AR0231_supplies)];
+	struct regulator_bulk_data supplies[ARRAY_SIZE(ar0231_supplies)];
 	unsigned long link_freq_bitmap;
-	const struct AR0231_mode *cur_mode;
+	const struct ar0231_mode *cur_mode;
 };
 
-static int AR0231_set_ctrl(struct v4l2_ctrl *ctrl)
+static int ar0231_set_ctrl(struct v4l2_ctrl *ctrl)
 {
-	struct AR0231 *AR0231 =
-		container_of(ctrl->handler, struct AR0231, ctrl_handler);
-	struct i2c_client *client = v4l2_get_subdevdata(&AR0231->sd);
+	struct ar0231 *ar0231 =
+		container_of(ctrl->handler, struct ar0231, ctrl_handler);
+	struct i2c_client *client = v4l2_get_subdevdata(&ar0231->sd);
 	int ret;
 
 	if (!pm_runtime_get_if_in_use(&client->dev))
@@ -225,15 +225,15 @@ static int AR0231_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_ANALOGUE_GAIN:
-		ret = cci_write(AR0231->cci, AR0231_ANALOG_GAIN,
+		ret = cci_write(ar0231->cci, AR0231_ANALOG_GAIN,
 				0xFF00 | ctrl->val << 4 | ctrl->val, &ret);
 		break;
 	case V4L2_CID_VBLANK:
-		ret = cci_write(AR0231->cci, AR0231_REG_VTS,
-				AR0231->cur_mode->height + ctrl->val, NULL);
+		ret = cci_write(ar0231->cci, AR0231_REG_VTS,
+				ar0231->cur_mode->height + ctrl->val, NULL);
 		break;
 	case V4L2_CID_EXPOSURE:
-		ret = cci_write(AR0231->cci, AR0231_COARSE_INTEGRATION_TIME,
+		ret = cci_write(ar0231->cci, AR0231_COARSE_INTEGRATION_TIME,
 				ctrl->val, &ret);
 		break;
 	default:
@@ -248,53 +248,53 @@ static int AR0231_set_ctrl(struct v4l2_ctrl *ctrl)
 
 // OK BELOW
 
-static const struct v4l2_ctrl_ops AR0231_ctrl_ops = {
-	.s_ctrl = AR0231_set_ctrl,
+static const struct v4l2_ctrl_ops ar0231_ctrl_ops = {
+	.s_ctrl = ar0231_set_ctrl,
 };
 
-static int AR0231_init_controls(struct AR0231 *AR0231)
+static int ar0231_init_controls(struct ar0231 *ar0231)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&AR0231->sd);
+	struct i2c_client *client = v4l2_get_subdevdata(&ar0231->sd);
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl_handler *ctrl_hdlr;
 	s64 vblank, hblank;
 	u32 link_freq_size;
 	int ret;
 
-	ctrl_hdlr = &AR0231->ctrl_handler;
+	ctrl_hdlr = &ar0231->ctrl_handler;
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
 	if (ret)
 		return ret;
 
 	link_freq_size = ARRAY_SIZE(link_freq_menu_items) - 1;
-	AR0231->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr, &AR0231_ctrl_ops,
+	ar0231->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr, &ar0231_ctrl_ops,
 						   V4L2_CID_LINK_FREQ,
 						   link_freq_size, 0,
 						   link_freq_menu_items);
-	if (AR0231->link_freq)
-		AR0231->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	if (ar0231->link_freq)
+		ar0231->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	AR0231->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
+	ar0231->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, &ar0231_ctrl_ops,
 					       V4L2_CID_PIXEL_RATE, PIXEL_RATE,
 					       PIXEL_RATE, 1, PIXEL_RATE);
-	if (AR0231->pixel_rate)
-		AR0231->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	if (ar0231->pixel_rate)
+		ar0231->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	vblank = AR0231_VTS_MAX - AR0231->cur_mode->height;
-	AR0231->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
+	vblank = AR0231_VTS_MAX - ar0231->cur_mode->height;
+	ar0231->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0231_ctrl_ops,
 					   V4L2_CID_VBLANK, 0, vblank, 1,
-					   AR0231->cur_mode->vblank);
-	hblank = AR0231->cur_mode->hblank;
-	AR0231->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops,
+					   ar0231->cur_mode->vblank);
+	hblank = ar0231->cur_mode->hblank;
+	ar0231->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0231_ctrl_ops,
 					   V4L2_CID_HBLANK, hblank, hblank, 1,
 					   hblank);
-	if (AR0231->hblank)
-		AR0231->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	if (ar0231->hblank)
+		ar0231->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+	v4l2_ctrl_new_std(ctrl_hdlr, &ar0231_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  0, 15, 1, 7);
 
-	v4l2_ctrl_new_std(ctrl_hdlr, &AR0231_ctrl_ops, V4L2_CID_EXPOSURE, 2,
+	v4l2_ctrl_new_std(ctrl_hdlr, &ar0231_ctrl_ops, V4L2_CID_EXPOSURE, 2,
 			  0x0855, 1, 5);
 
 	if (ctrl_hdlr->error)
@@ -304,17 +304,17 @@ static int AR0231_init_controls(struct AR0231 *AR0231)
 	if (ret)
 		return ret;
 
-	ret = v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &AR0231_ctrl_ops,
+	ret = v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &ar0231_ctrl_ops,
 					      &props);
 	if (ret)
 		return ret;
 
-	AR0231->sd.ctrl_handler = ctrl_hdlr;
+	ar0231->sd.ctrl_handler = ctrl_hdlr;
 
 	return 0;
 }
 
-static void AR0231_update_pad_format(const struct AR0231_mode *mode,
+static void ar0231_update_pad_format(const struct ar0231_mode *mode,
 				     struct v4l2_mbus_framefmt *fmt)
 {
 	fmt->width = mode->width;
@@ -323,33 +323,33 @@ static void AR0231_update_pad_format(const struct AR0231_mode *mode,
 	fmt->field = V4L2_FIELD_NONE;
 }
 
-static int AR0231_start_streaming(struct AR0231 *AR0231)
+static int ar0231_start_streaming(struct ar0231 *ar0231)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&AR0231->sd);
-	const struct AR0231_reg_list *reg_list;
+	struct i2c_client *client = v4l2_get_subdevdata(&ar0231->sd);
+	const struct ar0231_reg_list *reg_list;
 	int link_freq_index, ret;
 	u64 val;
 
-	ret = cci_write(AR0231->cci, AR0231_REG_MODE_SELECT, AR0231_MODE_RESET,
+	ret = cci_write(ar0231->cci, AR0231_REG_MODE_SELECT, AR0231_MODE_RESET,
 			NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to reset");
 		return ret;
 	}
 
-	reg_list = &AR0231->cur_mode->reg_list;
-	ret = cci_multi_reg_write(AR0231->cci, reg_list->regs,
+	reg_list = &ar0231->cur_mode->reg_list;
+	ret = cci_multi_reg_write(ar0231->cci, reg_list->regs,
 				  reg_list->num_of_regs, NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to set mode");
 		return ret;
 	}
 
-	ret = __v4l2_ctrl_handler_setup(AR0231->sd.ctrl_handler);
+	ret = __v4l2_ctrl_handler_setup(ar0231->sd.ctrl_handler);
 	if (ret)
 		return ret;
 
-	ret = cci_write(AR0231->cci, AR0231_REG_MODE_SELECT,
+	ret = cci_write(ar0231->cci, AR0231_REG_MODE_SELECT,
 			AR0231_MODE_STREAMING, NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to start stream");
@@ -359,15 +359,15 @@ static int AR0231_start_streaming(struct AR0231 *AR0231)
 	return 0;
 }
 
-static int AR0231_stop_streaming(struct AR0231 *AR0231)
+static int ar0231_stop_streaming(struct ar0231 *ar0231)
 {
-	return cci_write(AR0231->cci, AR0231_REG_MODE_SELECT,
+	return cci_write(ar0231->cci, AR0231_REG_MODE_SELECT,
 			 AR0231_MODE_STANDBY, NULL);
 }
 
-static int AR0231_set_stream(struct v4l2_subdev *sd, int enable)
+static int ar0231_set_stream(struct v4l2_subdev *sd, int enable)
 {
-	struct AR0231 *AR0231 = to_AR0231(sd);
+	struct ar0231 *ar0231 = to_ar0231(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int ret = 0;
 
@@ -376,11 +376,11 @@ static int AR0231_set_stream(struct v4l2_subdev *sd, int enable)
 		if (ret < 0)
 			return ret;
 
-		ret = AR0231_start_streaming(AR0231);
+		ret = ar0231_start_streaming(ar0231);
 		if (ret)
 			goto error_rpm_put;
 	} else {
-		AR0231_stop_streaming(AR0231);
+		ar0231_stop_streaming(ar0231);
 		pm_runtime_put(&client->dev);
 	}
 
@@ -392,53 +392,53 @@ error_rpm_put:
 	return ret;
 }
 
-static int AR0231_get_fmt(struct v4l2_subdev *sd,
+static int ar0231_get_fmt(struct v4l2_subdev *sd,
 			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
-	struct AR0231 *AR0231 = to_AR0231(sd);
+	struct ar0231 *ar0231 = to_ar0231(sd);
 
-	fmt->format = AR0231->format;
+	fmt->format = ar0231->format;
 
 	return 0;
 }
 
-static int AR0231_set_fmt(struct v4l2_subdev *sd,
+static int ar0231_set_fmt(struct v4l2_subdev *sd,
 			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
-	struct AR0231 *AR0231 = to_AR0231(sd);
+	struct ar0231 *ar0231 = to_ar0231(sd);
 	struct v4l2_rect *crop;
-	const struct AR0231_mode *mode;
+	const struct ar0231_mode *mode;
 	s64 hblank;
 	int ret;
 
-	mode = v4l2_find_nearest_size(AR0231_modes, ARRAY_SIZE(AR0231_modes),
+	mode = v4l2_find_nearest_size(ar0231_modes, ARRAY_SIZE(ar0231_modes),
 				      width, height, fmt->format.width,
 				      fmt->format.height);
 
-	AR0231_update_pad_format(mode, &fmt->format);
+	ar0231_update_pad_format(mode, &fmt->format);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 	} else {
-		AR0231->cur_mode = mode;
-		__v4l2_ctrl_s_ctrl(AR0231->link_freq, mode->link_freq_index);
+		ar0231->cur_mode = mode;
+		__v4l2_ctrl_s_ctrl(ar0231->link_freq, mode->link_freq_index);
 
-		hblank = AR0231->cur_mode->hblank;
-		__v4l2_ctrl_modify_range(AR0231->hblank, hblank, hblank, 1,
+		hblank = ar0231->cur_mode->hblank;
+		__v4l2_ctrl_modify_range(ar0231->hblank, hblank, hblank, 1,
 					 hblank);
 
-		__v4l2_ctrl_modify_range(AR0231->vblank, 0,
+		__v4l2_ctrl_modify_range(ar0231->vblank, 0,
 					 AR0231_VTS_MAX - mode->height, 1,
-					 AR0231->cur_mode->vblank);
-		__v4l2_ctrl_s_ctrl(AR0231->vblank, AR0231->cur_mode->vblank);
+					 ar0231->cur_mode->vblank);
+		__v4l2_ctrl_s_ctrl(ar0231->vblank, ar0231->cur_mode->vblank);
 	}
 
 	return 0;
 }
 
-static int AR0231_enum_mbus_code(struct v4l2_subdev *sd,
+static int ar0231_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
@@ -450,25 +450,25 @@ static int AR0231_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int AR0231_enum_frame_size(struct v4l2_subdev *sd,
+static int ar0231_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
-	if (fse->index >= ARRAY_SIZE(AR0231_modes))
+	if (fse->index >= ARRAY_SIZE(ar0231_modes))
 		return -EINVAL;
 
 	if (fse->code != MEDIA_BUS_FMT_SGRBG12_1X12)
 		return -EINVAL;
 
-	fse->min_width = AR0231_modes[fse->index].width;
+	fse->min_width = ar0231_modes[fse->index].width;
 	fse->max_width = fse->min_width;
-	fse->min_height = AR0231_modes[fse->index].height;
+	fse->min_height = ar0231_modes[fse->index].height;
 	fse->max_height = fse->min_height;
 
 	return 0;
 }
 
-static int AR0231_get_selection(struct v4l2_subdev *sd,
+static int ar0231_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *state,
 				struct v4l2_subdev_selection *sel)
 {
@@ -491,10 +491,10 @@ static int AR0231_get_selection(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int AR0231_init_state(struct v4l2_subdev *sd,
+static int ar0231_init_state(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_state *sd_state)
 {
-	const struct AR0231_mode *def_mode = &AR0231_modes[0];
+	const struct ar0231_mode *def_mode = &ar0231_modes[0];
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
 		.format = {
@@ -504,43 +504,43 @@ static int AR0231_init_state(struct v4l2_subdev *sd,
 		},
 	};
 
-	AR0231_set_fmt(sd, sd_state, &fmt);
+	ar0231_set_fmt(sd, sd_state, &fmt);
 
 	return 0;
 }
 
-static const struct v4l2_subdev_video_ops AR0231_video_ops = {
-	.s_stream = AR0231_set_stream,
+static const struct v4l2_subdev_video_ops ar0231_video_ops = {
+	.s_stream = ar0231_set_stream,
 };
 
-static const struct v4l2_subdev_pad_ops AR0231_pad_ops = {
-	.enum_mbus_code = AR0231_enum_mbus_code,
-	.enum_frame_size = AR0231_enum_frame_size,
-	.get_fmt = AR0231_get_fmt,
-	.set_fmt = AR0231_set_fmt,
-	.get_selection = AR0231_get_selection,
+static const struct v4l2_subdev_pad_ops ar0231_pad_ops = {
+	.enum_mbus_code = ar0231_enum_mbus_code,
+	.enum_frame_size = ar0231_enum_frame_size,
+	.get_fmt = ar0231_get_fmt,
+	.set_fmt = ar0231_set_fmt,
+	.get_selection = ar0231_get_selection,
 };
 
-static const struct v4l2_subdev_core_ops AR0231_core_ops = {
+static const struct v4l2_subdev_core_ops ar0231_core_ops = {
 	.subscribe_event = v4l2_ctrl_subdev_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
 };
 
-static const struct v4l2_subdev_ops AR0231_subdev_ops = {
-	.core = &AR0231_core_ops,
-	.video = &AR0231_video_ops,
-	.pad = &AR0231_pad_ops,
+static const struct v4l2_subdev_ops ar0231_subdev_ops = {
+	.core = &ar0231_core_ops,
+	.video = &ar0231_video_ops,
+	.pad = &ar0231_pad_ops,
 };
 
-static const struct media_entity_operations AR0231_subdev_entity_ops = {
+static const struct media_entity_operations ar0231_subdev_entity_ops = {
 	.link_validate = v4l2_subdev_link_validate,
 };
 
-static const struct v4l2_subdev_internal_ops AR0231_internal_ops = {
-	.init_state = AR0231_init_state,
+static const struct v4l2_subdev_internal_ops ar0231_internal_ops = {
+	.init_state = ar0231_init_state,
 };
 
-static int AR0231_parse_hw_config(struct AR0231 *AR0231)
+static int ar0231_parse_hw_config(struct ar0231 *ar0231)
 {
 	struct fwnode_handle *endpoint;
 	struct v4l2_fwnode_endpoint ep_cfg = {
@@ -549,43 +549,43 @@ static int AR0231_parse_hw_config(struct AR0231 *AR0231)
 	int i;
 	int ret;
 
-	AR0231->clk = devm_clk_get(AR0231->dev, NULL);
-	if (IS_ERR(AR0231->clk))
-		return dev_err_probe(AR0231->dev, PTR_ERR(AR0231->clk),
+	ar0231->clk = devm_clk_get(ar0231->dev, NULL);
+	if (IS_ERR(ar0231->clk))
+		return dev_err_probe(ar0231->dev, PTR_ERR(ar0231->clk),
 				     "Failed to get clock\n");
 
-	AR0231->reset_gpio =
-		devm_gpiod_get_optional(AR0231->dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(AR0231->reset_gpio))
-		return dev_err_probe(AR0231->dev, PTR_ERR(AR0231->reset_gpio),
+	ar0231->reset_gpio =
+		devm_gpiod_get_optional(ar0231->dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ar0231->reset_gpio))
+		return dev_err_probe(ar0231->dev, PTR_ERR(ar0231->reset_gpio),
 				     "Failed to get reset gpio\n");
 
-	for (i = 0; i < ARRAY_SIZE(AR0231_supplies); i++)
-		AR0231->supplies[i].supply = AR0231_supplies[i];
+	for (i = 0; i < ARRAY_SIZE(ar0231_supplies); i++)
+		ar0231->supplies[i].supply = ar0231_supplies[i];
 
-	ret = devm_regulator_bulk_get(AR0231->dev, ARRAY_SIZE(AR0231_supplies),
-				      AR0231->supplies);
+	ret = devm_regulator_bulk_get(ar0231->dev, ARRAY_SIZE(ar0231_supplies),
+				      ar0231->supplies);
 	if (ret)
-		return dev_err_probe(AR0231->dev, ret, "Cannot get supplies\n");
+		return dev_err_probe(ar0231->dev, ret, "Cannot get supplies\n");
 
 	endpoint =
-		fwnode_graph_get_next_endpoint(dev_fwnode(AR0231->dev), NULL);
+		fwnode_graph_get_next_endpoint(dev_fwnode(ar0231->dev), NULL);
 	if (!endpoint) {
-		dev_err(AR0231->dev, "endpoint node not found\n");
+		dev_err(ar0231->dev, "endpoint node not found\n");
 		return -EPROBE_DEFER;
 	}
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &ep_cfg);
 	if (ret) {
-		dev_err(AR0231->dev, "parsing endpoint node failed\n");
+		dev_err(ar0231->dev, "parsing endpoint node failed\n");
 		goto error_out;
 	}
 
-	ret = v4l2_link_freq_to_bitmap(AR0231->dev, ep_cfg.link_frequencies,
+	ret = v4l2_link_freq_to_bitmap(ar0231->dev, ep_cfg.link_frequencies,
 				       ep_cfg.nr_of_link_frequencies,
 				       link_freq_menu_items,
 				       ARRAY_SIZE(link_freq_menu_items),
-				       &AR0231->link_freq_bitmap);
+				       &ar0231->link_freq_bitmap);
 	if (ret)
 		goto error_out;
 
@@ -595,13 +595,13 @@ error_out:
 	return ret;
 }
 
-static int AR0231_identify_module(struct AR0231 *AR0231)
+static int ar0231_identify_module(struct ar0231 *ar0231)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&AR0231->sd);
+	struct i2c_client *client = v4l2_get_subdevdata(&ar0231->sd);
 	int ret;
 	u64 val;
 
-	ret = cci_read(AR0231->cci, AR0231_REG_CHIP_ID, &val, NULL);
+	ret = cci_read(ar0231->cci, AR0231_REG_CHIP_ID, &val, NULL);
 	if (ret)
 		return ret;
 
@@ -614,12 +614,12 @@ static int AR0231_identify_module(struct AR0231 *AR0231)
 	return 0;
 }
 
-static int AR0231_power_on(struct AR0231 *sensor)
+static int ar0231_power_on(struct ar0231 *sensor)
 {
 	unsigned long clk_rate;
 	int ret;
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(AR0231_supplies),
+	ret = regulator_bulk_enable(ARRAY_SIZE(ar0231_supplies),
 				    sensor->supplies);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to enable regulators\n");
@@ -634,7 +634,7 @@ static int AR0231_power_on(struct AR0231 *sensor)
 	ret = clk_prepare_enable(sensor->clk);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to enable clock\n");
-		regulator_bulk_disable(ARRAY_SIZE(AR0231_supplies),
+		regulator_bulk_disable(ARRAY_SIZE(ar0231_supplies),
 				       sensor->supplies);
 		return ret;
 	}
@@ -658,86 +658,86 @@ static int AR0231_power_on(struct AR0231 *sensor)
 
 error_reset:
 	gpiod_set_value_cansleep(sensor->reset_gpio, 1);
-	regulator_bulk_disable(ARRAY_SIZE(AR0231_supplies), sensor->supplies);
+	regulator_bulk_disable(ARRAY_SIZE(ar0231_supplies), sensor->supplies);
 
 	return ret;
 }
 
-static int AR0231_power_off(struct AR0231 *sensor)
+static int ar0231_power_off(struct ar0231 *sensor)
 {
 	gpiod_set_value_cansleep(sensor->reset_gpio, 1);
 	clk_disable_unprepare(sensor->clk);
-	regulator_bulk_disable(ARRAY_SIZE(AR0231_supplies), sensor->supplies);
+	regulator_bulk_disable(ARRAY_SIZE(ar0231_supplies), sensor->supplies);
 
 	return 0;
 }
 
-static int AR0231_probe(struct i2c_client *client)
+static int ar0231_probe(struct i2c_client *client)
 {
-	struct AR0231 *AR0231;
+	struct ar0231 *ar0231;
 	unsigned int i;
 	int ret;
 
-	AR0231 = devm_kzalloc(&client->dev, sizeof(*AR0231), GFP_KERNEL);
-	if (!AR0231)
+	ar0231 = devm_kzalloc(&client->dev, sizeof(*ar0231), GFP_KERNEL);
+	if (!ar0231)
 		return -ENOMEM;
 
-	AR0231->dev = &client->dev;
+	ar0231->dev = &client->dev;
 
-	AR0231->cci = devm_cci_regmap_init_i2c(client, 16);
-	if (IS_ERR(AR0231->cci))
-		return dev_err_probe(AR0231->dev, PTR_ERR(AR0231->cci),
+	ar0231->cci = devm_cci_regmap_init_i2c(client, 16);
+	if (IS_ERR(ar0231->cci))
+		return dev_err_probe(ar0231->dev, PTR_ERR(ar0231->cci),
 				     "Failed to initialize CCI\n");
 
-	v4l2_i2c_subdev_init(&AR0231->sd, client, &AR0231_subdev_ops);
+	v4l2_i2c_subdev_init(&ar0231->sd, client, &ar0231_subdev_ops);
 
-	ret = AR0231_parse_hw_config(AR0231);
+	ret = ar0231_parse_hw_config(ar0231);
 	if (ret)
 		return ret;
 
-	ret = AR0231_power_on(AR0231);
+	ret = ar0231_power_on(ar0231);
 	if (ret) {
-		dev_err_probe(AR0231->dev, ret,
+		dev_err_probe(ar0231->dev, ret,
 			      "Could not power on the device\n");
 		return ret;
 	}
 
-	ret = AR0231_identify_module(AR0231);
+	ret = ar0231_identify_module(ar0231);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
 		return ret;
 	}
 
-	AR0231->cur_mode = &AR0231_modes[0];
-	ret = AR0231_init_controls(AR0231);
+	ar0231->cur_mode = &ar0231_modes[0];
+	ret = ar0231_init_controls(ar0231);
 	if (ret) {
 		dev_err(&client->dev, "failed to init controls: %d", ret);
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
 	/* Initialize subdev */
-	AR0231->sd.internal_ops = &AR0231_internal_ops;
-	AR0231->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
+	ar0231->sd.internal_ops = &ar0231_internal_ops;
+	ar0231->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 			    V4L2_SUBDEV_FL_HAS_EVENTS;
-	AR0231->sd.entity.ops = &AR0231_subdev_entity_ops;
-	AR0231->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	ar0231->sd.entity.ops = &ar0231_subdev_entity_ops;
+	ar0231->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
 	/* Initialize source pad */
-	AR0231->pad.flags = MEDIA_PAD_FL_SOURCE;
-	ret = media_entity_pads_init(&AR0231->sd.entity, 1, &AR0231->pad);
+	ar0231->pad.flags = MEDIA_PAD_FL_SOURCE;
+	ret = media_entity_pads_init(&ar0231->sd.entity, 1, &ar0231->pad);
 	if (ret) {
 		dev_err(&client->dev, "failed to init entity pads: %d", ret);
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
-	AR0231->sd.state_lock = AR0231->ctrl_handler.lock;
-	ret = v4l2_subdev_init_finalize(&AR0231->sd);
+	ar0231->sd.state_lock = ar0231->ctrl_handler.lock;
+	ret = v4l2_subdev_init_finalize(&ar0231->sd);
 	if (ret < 0) {
-		dev_err(AR0231->dev, "v4l2 subdev init error: %d\n", ret);
+		dev_err(ar0231->dev, "v4l2 subdev init error: %d\n", ret);
 		goto probe_error_media_entity_cleanup;
 	}
 
-	ret = v4l2_async_register_subdev_sensor(&AR0231->sd);
+	ret = v4l2_async_register_subdev_sensor(&ar0231->sd);
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
@@ -752,21 +752,21 @@ static int AR0231_probe(struct i2c_client *client)
 
 probe_error_rpm:
 	pm_runtime_disable(&client->dev);
-	v4l2_subdev_cleanup(&AR0231->sd);
+	v4l2_subdev_cleanup(&ar0231->sd);
 
 probe_error_media_entity_cleanup:
-	media_entity_cleanup(&AR0231->sd.entity);
+	media_entity_cleanup(&ar0231->sd.entity);
 
 probe_error_v4l2_ctrl_handler_free:
-	v4l2_ctrl_handler_free(AR0231->sd.ctrl_handler);
+	v4l2_ctrl_handler_free(ar0231->sd.ctrl_handler);
 
 	return ret;
 }
 
-static void AR0231_remove(struct i2c_client *client)
+static void ar0231_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct AR0231 *AR0231 = to_AR0231(sd);
+	struct ar0231 *ar0231 = to_ar0231(sd);
 
 	v4l2_async_unregister_subdev(sd);
 	v4l2_subdev_cleanup(sd);
@@ -775,30 +775,30 @@ static void AR0231_remove(struct i2c_client *client)
 
 	pm_runtime_disable(&client->dev);
 	if (!pm_runtime_status_suspended(&client->dev))
-		AR0231_power_off(&client->dev);
+		ar0231_power_off(&client->dev);
 	pm_runtime_set_suspended(&client->dev);
 }
 
-static const struct of_device_id AR0231_of_match[] = {
-	{ .compatible = "onnn,AR0231" },
+static const struct of_device_id ar0231_of_match[] = {
+	{ .compatible = "onnn,ar0231" },
 	{}
 };
-MODULE_DEVICE_TABLE(of, AR0231_of_match);
+MODULE_DEVICE_TABLE(of, ar0231_of_match);
 
-static const struct dev_pm_ops AR0231_pm_ops = { SET_RUNTIME_PM_OPS(
-	AR0231_power_off, AR0231_power_on, NULL) };
+static const struct dev_pm_ops ar0231_pm_ops = { SET_RUNTIME_PM_OPS(
+	ar0231_power_off, ar0231_power_on, NULL) };
 
-static struct i2c_driver AR0231_i2c_driver = {
+static struct i2c_driver ar0231_i2c_driver = {
 	.driver = {
-		.name = "AR0231",
-		.of_match_table = of_match_ptr(AR0231_of_match),
-		.pm = &AR0231_pm_ops,		
+		.name = "ar0231",
+		.of_match_table = of_match_ptr(ar0231_of_match),
+		.pm = &ar0231_pm_ops,
 	},
-	.probe = AR0231_probe,
-	.remove = AR0231_remove,
+	.probe = ar0231_probe,
+	.remove = ar0231_remove,
 };
 
-module_i2c_driver(AR0231_i2c_driver);
+module_i2c_driver(ar0231_i2c_driver);
 
-MODULE_DESCRIPTION("ON Semiconductor AR0231 sensor driver");
+MODULE_DESCRIPTION("ON Semiconductor ar0231 sensor driver");
 MODULE_AUTHOR("Robin Reckmann <robin.reckmann@gmail.com");
