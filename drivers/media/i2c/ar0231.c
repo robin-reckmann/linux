@@ -244,8 +244,6 @@ static int ar0231_set_ctrl(struct v4l2_ctrl *ctrl)
 	return ret;
 }
 
-// OK BELOW
-
 static const struct v4l2_ctrl_ops ar0231_ctrl_ops = {
 	.s_ctrl = ar0231_set_ctrl,
 };
