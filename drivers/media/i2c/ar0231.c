@@ -755,6 +755,7 @@ static int ar0231_probe(struct i2c_client *client)
 	pm_runtime_set_active(ar0231->dev);
 	pm_runtime_enable(ar0231->dev);
 	pm_runtime_idle(ar0231->dev);
+	
 	return 0;
 
 probe_error_rpm:
