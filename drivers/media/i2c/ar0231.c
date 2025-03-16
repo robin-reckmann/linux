@@ -202,8 +202,6 @@ struct ar0231 {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *vblank;
 
-	struct v4l2_mbus_framefmt format;
-
 	struct device *dev;
 	struct regmap *cci;
 	struct clk *clk;
@@ -398,7 +396,14 @@ static int ar0231_get_fmt(struct v4l2_subdev *sd,
 {
 	struct ar0231 *ar0231 = to_ar0231(sd);
 
-	fmt->format = ar0231->format;
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+		struct v4l2_mbus_framefmt *framefmt;
+
+		framefmt = v4l2_subdev_state_get_format(sd_state, fmt->pad);
+		fmt->format = *framefmt;
+	} else {
+		ar0231_update_pad_format(ar0231->cur_mode, &fmt->format);
+	}
 
 	return 0;
 }
