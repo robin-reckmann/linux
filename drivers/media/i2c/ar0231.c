@@ -614,10 +614,14 @@ static int ar0231_identify_module(struct ar0231 *ar0231)
 	return 0;
 }
 
-static int ar0231_power_on(struct ar0231 *sensor)
+static int ar0231_power_on(struct device *dev)
 {
 	unsigned long clk_rate;
 	int ret;
+
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0231 *sensor = to_ar0231(sd);
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(ar0231_supplies),
 				    sensor->supplies);
@@ -663,8 +667,12 @@ error_reset:
 	return ret;
 }
 
-static int ar0231_power_off(struct ar0231 *sensor)
+static int ar0231_power_off(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0231 *sensor = to_ar0231(sd);
+
 	gpiod_set_value_cansleep(sensor->reset_gpio, 1);
 	clk_disable_unprepare(sensor->clk);
 	regulator_bulk_disable(ARRAY_SIZE(ar0231_supplies), sensor->supplies);
@@ -695,7 +703,7 @@ static int ar0231_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
-	ret = ar0231_power_on(ar0231);
+	ret = ar0231_power_on(ar0231->dev);
 	if (ret) {
 		dev_err_probe(ar0231->dev, ret,
 			      "Could not power on the device\n");
@@ -744,14 +752,13 @@ static int ar0231_probe(struct i2c_client *client)
 		goto probe_error_rpm;
 	}
 
-	pm_runtime_set_active(&client->dev);
-	pm_runtime_enable(&client->dev);
-	pm_runtime_idle(&client->dev);
-
+	pm_runtime_set_active(ar0231->dev);
+	pm_runtime_enable(ar0231->dev);
+	pm_runtime_idle(ar0231->dev);
 	return 0;
 
 probe_error_rpm:
-	pm_runtime_disable(&client->dev);
+	pm_runtime_disable(ar0231->dev);
 	v4l2_subdev_cleanup(&ar0231->sd);
 
 probe_error_media_entity_cleanup:
