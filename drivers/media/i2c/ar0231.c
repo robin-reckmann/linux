@@ -626,6 +626,9 @@ static int ar0231_power_on(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ar0231 *sensor = to_ar0231(sd);
 
+	if (sensor->reset_gpio)
+		gpiod_set_value_cansleep(sensor->reset_gpio, 1);
+
 	ret = regulator_bulk_enable(ARRAY_SIZE(ar0231_supplies),
 				    sensor->supplies);
 	if (ret) {
@@ -633,33 +636,17 @@ static int ar0231_power_on(struct device *dev)
 		return ret;
 	}
 
-	if (sensor->reset_gpio)
-		gpiod_set_value_cansleep(sensor->reset_gpio, 1);
-
-	fsleep(10000);
-
 	ret = clk_prepare_enable(sensor->clk);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to enable clock\n");
-		regulator_bulk_disable(ARRAY_SIZE(ar0231_supplies),
-				       sensor->supplies);
-		return ret;
-	}
-
-	clk_rate = clk_get_rate(sensor->clk);
-	if (ret) {
-		dev_err(sensor->dev, "fail to enable inclk\n");
 		goto error_reset;
 	}
-
-	fsleep(10000);
 
 	if (sensor->reset_gpio)
 		gpiod_set_value_cansleep(sensor->reset_gpio, 0);
 
-	/* The typical internal initialization time is 236K Ext clk cycles */
-	// fsleep(DIV_ROUND_UP_ULL(650000ULL * USEC_PER_SEC, clk_rate));
-	fsleep(34000);
+  	// wait 650000 cycles @ 19.2 mhz = 33.8 ms
+	fsleep(33800);
 
 	return ret;
 
