@@ -800,3 +800,4 @@ module_i2c_driver(ar0231_i2c_driver);
 
 MODULE_DESCRIPTION("ON Semiconductor ar0231 sensor driver");
 MODULE_AUTHOR("Robin Reckmann <robin.reckmann@gmail.com");
+MODULE_LICENSE("GPL v2");
