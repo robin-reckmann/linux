@@ -19,6 +19,31 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	camera_ldo: camera_ldo {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "camera_ldo";
+		regulator-min-microvolt = <1050000>;
+		regulator-max-microvolt = <1050000>;
+		regulator-enable-ramp-delay = <135>;
+		gpio = <&pm8998_gpios 12 0>;
+		enable-active-high;
+	};
+
+
+	camera_vana: camera_vana {
+		status = "okay";
+
+		compatible = "regulator-fixed";
+		regulator-name = "camera_vana";
+		regulator-min-microvolt = <2850000>;
+		regulator-max-microvolt = <2850000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 8 0>;
+		enable-active-high;
+	};
+
 	main5v: main5v {
 		status = "okay";
 
@@ -398,6 +423,107 @@
 
 	vdda-phy-supply = <&vreg_l1a_0p875>;
 	vdda-pll-supply = <&vreg_l26a_1p2>;
+
+	ports {
+		port@0 {
+			reg = <0>;
+			csiphy0_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				remote-endpoint = <&ar0231_0_ep>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			csiphy1_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				remote-endpoint = <&ar0231_1_ep>;
+			};
+		};
+
+		port@2 {
+			reg = <2>;
+			csiphy2_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				remote-endpoint = <&ar0231_2_ep>;
+			};
+		};
+	};
+};
+
+&cci {
+	status = "okay";
+};
+
+&cci_i2c0 {
+	clock-frequency = <400000>;
+
+	camera@10 {
+		compatible = "onnn,ar0231";
+		reg = <0x10>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam0_default>;
+		clocks = <&clock_camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "extclk";
+		reset-gpios = <&tlmm 9 GPIO_ACTIVE_LOW>;
+		vaa-supply = <&camera_vana>;
+		vdd-supply = <&camera_ldo>;
+		vdd_io-supply = <&vreg_lvs1a_1p8>;
+
+		port {
+			ar0231_0_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				link-frequencies = /bits/ 64 <528000000>;
+				remote-endpoint = <&csiphy0_ep>;
+			};
+		};
+	};
+
+	camera@18 {
+		compatible = "onnn,ar0231";
+		reg = <0x18>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam1_default>;
+		clocks = <&clock_camcc CAM_CC_MCLK1_CLK>;
+		clock-names = "extclk";
+		reset-gpios = <&tlmm 7 GPIO_ACTIVE_LOW>;
+		vaa-supply = <&camera_vana>;
+		vdd-supply = <&camera_ldo>;
+		vdd_io-supply = <&vreg_lvs1a_1p8>;
+
+		port {
+			ar0231_1_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				link-frequencies = /bits/ 64 <528000000>;
+				remote-endpoint = <&csiphy1_ep>;
+			};
+		};
+	};
+};
+
+&cci_i2c1 {
+	clock-frequency = <400000>;
+
+	camera@10 {
+		compatible = "onnn,ar0231";
+		reg = <0x10>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam2_default>;
+		clocks = <&clock_camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "extclk";
+		reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
+		vaa-supply = <&camera_vana>;
+		vdd-supply = <&camera_ldo>;
+		vdd_io-supply = <&vreg_lvs1a_1p8>;
+
+		port {
+			ar0231_2_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				link-frequencies = /bits/ 64 <528000000>;
+				remote-endpoint = <&csiphy2_ep>;
+			};
+		};
+	};
 };
 
 &gcc {
@@ -683,6 +809,51 @@
 			function = "gpio";
 			drive-strength = <2>;
 			bias-pull-up;
+		};
+	};
+
+	cam0_default: cam0-default-state {
+		rst-pins {
+			pins = "gpio9";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+		mclk-pins {
+			pins = "gpio13";
+			function = "cam_mclk";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	cam1_default: cam1-default-state {
+		rst-pins {
+			pins = "gpio7";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+		mclk-pins {
+			pins = "gpio14";
+			function = "cam_mclk";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	cam2_default: cam2-default-state {
+		rst-pins {
+			pins = "gpio12";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+		mclk-pins {
+			pins = "gpio15";
+			function = "cam_mclk";
+			drive-strength = <8>;
+			bias-disable;
 		};
 	};
 };
