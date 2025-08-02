@@ -2705,6 +2705,8 @@
 				 <&apps_smmu 0x706 0x1>,
 				 <&apps_smmu 0x714 0x1>,
 				 <&apps_smmu 0x716 0x1>;
+			interconnects = <&aggre2_noc MASTER_CRYPTO 0 &mem_noc SLAVE_EBI1 0>;
+			interconnect-names = "memory";
 		};
 
 		ipa: ipa@1e40000 {
