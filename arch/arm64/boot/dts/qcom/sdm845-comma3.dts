@@ -462,23 +462,15 @@
 	connector: connector {
 		compatible = "usb-c-connector";
 
-		power-role = "dual";
-		data-role = "dual";
+		power-role = "source";
+		data-role = "host";
 		self-powered;
 		try-power-role = "source";
-
-		typec-power-opmode = "default";
+		typec-power-opmode = "1.5A";
 		pd-disable;
 
-		source-pdos = <PDO_FIXED(5000, 1500,
-					 PDO_FIXED_DUAL_ROLE |
-					 PDO_FIXED_USB_COMM |
-					 PDO_FIXED_DATA_SWAP)>;
-
-		sink-pdos = <PDO_FIXED(5000, 3000,
-					 PDO_FIXED_DUAL_ROLE |
-					 PDO_FIXED_USB_COMM |
-					 PDO_FIXED_DATA_SWAP)>;
+		//source-pdos = <PDO_FIXED(5000, 1500,
+		//			 PDO_FIXED_USB_COMM)>;
 
 		ports {
 			#address-cells = <1>;
@@ -490,11 +482,21 @@
 					remote-endpoint = <&usb_1_dwc3_hs>;
 				};
 			};
+
+			port@1 {
+				reg = <1>;
+				pmi8998_typec_mux_out: endpoint {
+					remote-endpoint = <&usb_1_qmpphy_out>;
+					data-lanes = <0 1 2 3>;
+				};
+			};
 		};
 	};
 };
 
 &pmi8998_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <1500000>;
 	status = "okay";
 };
 
@@ -573,6 +575,11 @@
 	vdda-phy-supply = <&vdda_usb1_ss_1p2>;
 	vdda-pll-supply = <&vdda_usb1_ss_core>;
 };
+
+&usb_1_qmpphy_out {
+	remote-endpoint = <&pmi8998_typec_mux_out>;
+};
+
 
 &usb_2 {
 	status = "okay";

@@ -897,6 +897,8 @@ static void tcpm_debugfs_exit(const struct tcpm_port *port) { }
 
 static void tcpm_set_cc(struct tcpm_port *port, enum typec_cc_status cc)
 {
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(KERN_ALERT "DEBUG: typec_cc_status: %d \n",cc);
 	tcpm_log(port, "cc:=%d", cc);
 	port->cc_req = cc;
 	port->tcpc->set_cc(port->tcpc, cc);
@@ -941,9 +943,13 @@ static enum typec_cc_status tcpm_rp_cc(struct tcpm_port *port)
 	int nr_pdo = port->nr_src_pdo;
 	int i;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(KERN_ALERT "port->src_rp: %d \n",port->src_rp);
 	if (!port->pd_supported)
 		return port->src_rp;
 
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 	/*
 	 * Search for first entry with matching voltage.
 	 * It should report the maximum supported current.
@@ -4698,10 +4704,12 @@ static enum typec_pwr_opmode tcpm_get_pwr_opmode(enum typec_cc_status cc)
 
 static enum typec_cc_status tcpm_pwr_opmode_to_rp(enum typec_pwr_opmode opmode)
 {
+	printk(KERN_ALERT "DEBUG: opmode = %d\n", opmode);
 	switch (opmode) {
 	case TYPEC_PWR_MODE_USB:
 		return TYPEC_CC_RP_DEF;
 	case TYPEC_PWR_MODE_1_5A:
+		printk(KERN_ALERT "DEBUG: TYPEC_PWR_MODE_1_5A");
 		return TYPEC_CC_RP_1_5;
 	case TYPEC_PWR_MODE_3_0A:
 	case TYPEC_PWR_MODE_PD:
@@ -4769,6 +4777,9 @@ static void run_state_machine(struct tcpm_port *port)
 						port->state == SNK_UNATTACHED) ||
 					       (port->enter_state == SNK_DEBOUNCED &&
 						port->state == SNK_UNATTACHED));
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(KERN_ALERT "DEBUG: State: %d \n",port->state);
 
 	port->enter_state = port->state;
 	switch (port->state) {
@@ -7296,9 +7307,13 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 	 */
 	fw_devlink_purge_absent_suppliers(fwnode);
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	ret = typec_get_fw_cap(&port->typec_caps, fwnode);
 	if (ret < 0)
 		return ret;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	mode = 0;
 
@@ -7313,16 +7328,26 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 	port->slow_charger_loop = fwnode_property_read_bool(fwnode, "slow-charger-loop");
 	port->self_powered = fwnode_property_read_bool(fwnode, "self-powered");
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	if (!port->pd_supported) {
 		ret = fwnode_property_read_string(fwnode, "typec-power-opmode", &opmode_str);
+		if (!ret && opmode_str)
+    		printk(KERN_ALERT "DEBUG: typec-power-opmode = %s\n", opmode_str);
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		if (ret)
 			return ret;
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		ret = typec_find_pwr_opmode(opmode_str);
 		if (ret < 0)
 			return ret;
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		port->src_rp = tcpm_pwr_opmode_to_rp(ret);
+		printk(KERN_ALERT "DEBUG: port->src_rp: %d \n",port->src_rp);
 		return 0;
 	}
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	/* The following code are applicable to pd-capable ports, i.e. pd_supported is true. */
 
@@ -7337,6 +7362,8 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 			ret = 0;
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	/* For the backward compatibility, "capabilities" node is optional. */
 	capabilities = fwnode_get_named_child_node(fwnode, "capabilities");
 	if (!capabilities) {
@@ -7349,12 +7376,16 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 		}
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	port->pds = devm_kcalloc(port->dev, port->pd_count, sizeof(struct usb_power_delivery *),
 				 GFP_KERNEL);
 	if (!port->pds) {
 		ret = -ENOMEM;
 		goto put_capabilities;
 	}
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	port->pd_list = devm_kcalloc(port->dev, port->pd_count, sizeof(struct pd_data *),
 				     GFP_KERNEL);
@@ -7363,13 +7394,16 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 		goto put_capabilities;
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	for (i = 0; i < port->pd_count; i++) {
 		port->pd_list[i] = devm_kzalloc(port->dev, sizeof(struct pd_data), GFP_KERNEL);
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		if (!port->pd_list[i]) {
 			ret = -ENOMEM;
 			goto put_capabilities;
 		}
-
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		src_pdo = port->pd_list[i]->source_desc.pdo;
 		port->pd_list[i]->source_desc.role = TYPEC_SOURCE;
 		snk_pdo = port->pd_list[i]->sink_desc.pdo;
@@ -7380,8 +7414,9 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 			caps = fwnode;
 		else
 			caps = fwnode_get_next_child_node(capabilities, caps);
-
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		if (port->port_type != TYPEC_PORT_SNK) {
+			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			ret = fwnode_property_count_u32(caps, "source-pdos");
 			if (ret == 0) {
 				ret = -EINVAL;
@@ -7410,6 +7445,7 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 		}
 
 		if (port->port_type != TYPEC_PORT_SRC) {
+			printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			ret = fwnode_property_count_u32(caps, "sink-pdos");
 			if (ret == 0) {
 				ret = -EINVAL;
@@ -7430,6 +7466,7 @@ static int tcpm_fw_get_caps(struct tcpm_port *port, struct fwnode_handle *fwnode
 				goto put_caps;
 
 			if (fwnode_property_read_u32(caps, "op-sink-microwatt", &uw) < 0) {
+				printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				ret = -EINVAL;
 				goto put_caps;
 			}
@@ -7845,12 +7882,18 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 	init_completion(&port->pps_complete);
 	tcpm_debugfs_init(port);
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	err = tcpm_fw_get_caps(port, tcpc->fwnode);
 	if (err < 0)
 		goto out_destroy_wq;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 	err = tcpm_fw_get_snk_vdos(port, tcpc->fwnode);
 	if (err < 0)
 		goto out_destroy_wq;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	tcpm_fw_get_timings(port, tcpc->fwnode);
 	tcpm_fw_get_pd_revision(port, tcpc->fwnode);
@@ -7880,17 +7923,25 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 		goto out_destroy_wq;
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	err = devm_tcpm_psy_register(port);
 	if (err)
 		goto out_role_sw_put;
 	power_supply_changed(port->psy);
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	err = tcpm_port_register_pd(port);
 	if (err)
 		goto out_role_sw_put;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	if (port->pds)
 		port->typec_caps.pd = port->pds[0];
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	port->typec_port = typec_register_port(port->dev, &port->typec_caps);
 	if (IS_ERR(port->typec_port)) {
@@ -7898,12 +7949,16 @@ struct tcpm_port *tcpm_register_port(struct device *dev, struct tcpc_dev *tcpc)
 		goto out_unregister_pd;
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	typec_port_register_altmodes(port->typec_port,
 				     &tcpm_altmode_ops, port,
 				     port->port_altmode, ALTMODE_DISCOVERY_MAX);
 	typec_port_register_cable_ops(port->port_altmode, ARRAY_SIZE(port->port_altmode),
 				      &tcpm_cable_ops);
 	port->registered = true;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	mutex_lock(&port->lock);
 	tcpm_init(port);
