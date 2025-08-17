@@ -662,6 +662,9 @@ static int qcom_pmic_typec_port_set_cc(struct tcpc_dev *tcpc,
 	unsigned long flags;
 	int ret;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+	printk(KERN_ALERT "DEBUG: typec_cc_status: %d \n",cc);
+
 	spin_lock_irqsave(&pmic_typec_port->lock, flags);
 
 	ret = regmap_read(pmic_typec_port->regmap,
@@ -848,35 +851,68 @@ static int qcom_pmic_typec_port_start(struct pmic_typec *tcpm,
 	if (ret)
 		goto done;
 
-	ret = regmap_write(pmic_typec_port->regmap,
-			   pmic_typec_port->base + PMI8998_TYPE_C_CFG_3,
-			   TYPEC_CFG_3_MASK);
-	if (ret)
-		goto done;
-
-	/* Configure VCONN for software control */
-	ret = regmap_write(pmic_typec_port->regmap,
-			   pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
-			   PMI8998_VCONN_EN_SRC);
-	if (ret)
-		goto done;
-
-	/* start in TRY_SNK mode */
-	ret = regmap_write(pmic_typec_port->regmap,
-			   pmic_typec_port->base + PMI8998_TYPE_C_CFG_3,
-			   PMI8998_EN_TRYSINK_MODE);
-	if (ret)
-		goto done;
-
-	/* Set CC threshold to 1.6 Volts | tPDdebounce = 10-20ms */
+	/* VCONN under SW control; start with value=0 */
 	ret = regmap_update_bits(pmic_typec_port->regmap,
-				 pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
-				 PMI8998_DFP_CC_1P4V_OR_1P6V, PMI8998_DFP_CC_1P4V_OR_1P6V);
-	if (ret)
-		goto done;
+	                         pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+	                         PMI8998_VCONN_EN_SRC | PMI8998_VCONN_EN_VALUE,
+	                         PMI8998_VCONN_EN_SRC);
+	if (ret) goto done;
+
+	/* Pure Type-C behavior: disable APSD/factory bits */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG,
+	                         PMI8998_APSD_START_ON_CC |
+	                         PMI8998_WAIT_FOR_APSD |
+	                         PMI8998_FACTORY_MODE_DETECTION_EN |
+	                         PMI8998_VCONN_OC_CFG,
+	                         0);
+	if (ret) goto done;
+
+	/* Don’t enable USBIN source-change IRQs here */
+	ret = regmap_write(pmic_typec_port->regmap,
+	                   pmic_typec_port->base + PMI8998_USBIN_SOURCE_CHANGE_INTRPT_ENB, 0x00);
+	if (ret) goto done;
+
+	/* Force DFP (source) – no DRP / try-sink */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+	                         PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
+	                         PMI8998_DFP_EN_CMD);
+	if (ret) goto done;
+
+	/* Keep only TVBUS debounce in CFG_3; no Try.* */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_3,
+	                         PMI8998_TVBUS_DEBOUNCE |
+	                         PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
+	                         PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
+	                         PMI8998_EN_TRYSINK_MODE |
+	                         PMI8998_EN_LEGACY_CABLE_DETECTION,
+	                         PMI8998_TVBUS_DEBOUNCE);
+	if (ret) goto done;
+
+	/* Enable 80uA/180uA current sources (advertise Rp) */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
+	                         PMI8998_EN_80UA_180UA_CUR_SOURCE,
+	                         PMI8998_EN_80UA_180UA_CUR_SOURCE);
+	if (ret) goto done;
+
+	/* CC threshold = 1.6 V (tPDdebounce ~10–20 ms) */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
+	                         PMI8998_DFP_CC_1P4V_OR_1P6V,
+	                         PMI8998_DFP_CC_1P4V_OR_1P6V);
+	if (ret) goto done;
+
+	/* Suspend the sink path so we never draw from USBIN */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+	                         pmic_typec_port->base + PMI8998_USBIN_CMD_IL,
+	                         PMI8998_USBIN_SUSPEND,
+	                         PMI8998_USBIN_SUSPEND);
+	if (ret) goto done;
 
 	pmic_typec_port->tcpm_port = tcpm_port;
-
 	enable_irq(pmic_typec_port->irq);
 
 done:
