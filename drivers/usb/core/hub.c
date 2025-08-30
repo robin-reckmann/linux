@@ -1657,6 +1657,17 @@ static int hub_configure(struct usb_hub *hub,
 		message = "can't get hub status";
 		goto fail;
 	}
+
+	/* Force certain hubs to be treated as self-powered before budgeting */
+    if (usbcore_force_self_powered(hdev)) {
+        dev_warn(hub->intfdev,
+                 "USB: forcing hub %u-%s treated as self-powered\n",
+                 hdev->bus->busnum, hdev->devpath);
+        hubstatus |= (1 << USB_DEVICE_SELF_POWERED);   /* affect the branch below */
+        if (hdev->actconfig)
+            hdev->actconfig->desc.bmAttributes |= USB_CONFIG_ATT_SELFPOWER; /* keep internal view coherent */
+    }
+
 	hcd = bus_to_hcd(hdev->bus);
 	if (hdev == hdev->bus->root_hub) {
 		if (hcd->power_budget > 0)

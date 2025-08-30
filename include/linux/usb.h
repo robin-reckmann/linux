@@ -2062,6 +2062,8 @@ extern void usb_led_activity(enum usb_led_event ev);
 static inline void usb_led_activity(enum usb_led_event ev) {}
 #endif
 
+bool usbcore_force_self_powered(struct usb_device *udev);
+
 #endif  /* __KERNEL__ */
 
 #endif

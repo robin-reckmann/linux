@@ -47,6 +47,11 @@
 
 #include "hub.h"
 
+static char usbcore_forceselfpowered[32];
+module_param_string(forceselfpowered, usbcore_forceselfpowered,
+                    sizeof(usbcore_forceselfpowered), 0444);
+MODULE_PARM_DESC(forceselfpowered, "Hub path: '<bus>-<devpath>' or '-<devpath>'");
+
 const char *usbcore_name = "usbcore";
 
 static bool nousb;	/* Disable USB when built into kernel image */
@@ -1029,6 +1034,29 @@ void usb_free_coherent(struct usb_device *dev, size_t size, void *addr,
 	hcd_buffer_free(dev->bus, size, addr, dma);
 }
 EXPORT_SYMBOL_GPL(usb_free_coherent);
+
+/* Return true if udev matches usbcore.forceselfpowered= list. */
+bool usbcore_force_self_powered(struct usb_device *udev)
+{
+	char full[32];
+
+	if (!usbcore_forceselfpowered[0])
+		return false;
+
+	snprintf(full, sizeof(full), "%u-%s", udev->bus->busnum, udev->devpath);
+
+	if (sysfs_streq(usbcore_forceselfpowered, full))
+		return true;
+
+	if (usbcore_forceselfpowered[0] == '-') {
+		char shortp[32];
+
+		snprintf(shortp, sizeof(shortp), "-%s", udev->devpath);
+		if (sysfs_streq(usbcore_forceselfpowered, shortp))
+			return true;
+	}
+	return false;
+}
 
 /*
  * Notifications of device and interface registration
