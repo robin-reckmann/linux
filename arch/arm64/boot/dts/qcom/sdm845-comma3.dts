@@ -447,7 +447,7 @@
 	};
 
 	rpr0521@38 {
-		compatible = "rpr0521";
+		compatible = "rohm,rpr0521";
 		reg = <0x38>;
 	};
 };

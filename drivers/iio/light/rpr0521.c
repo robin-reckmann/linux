@@ -16,6 +16,8 @@
 #include <linux/i2c.h>
 #include <linux/regmap.h>
 #include <linux/delay.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
@@ -1111,6 +1113,12 @@ static const struct i2c_device_id rpr0521_id[] = {
 };
 
 MODULE_DEVICE_TABLE(i2c, rpr0521_id);
+
+static const struct of_device_id rpr0521_of_match[] = {
+	{ .compatible = "rohm,rpr0521" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, rpr0521_of_match);
 
 static struct i2c_driver rpr0521_driver = {
 	.driver = {
