@@ -3,6 +3,7 @@
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include <dt-bindings/sound/qcom,q6afe.h>
 #include <dt-bindings/sound/qcom,q6asm.h>
+#include <dt-bindings/usb/pd.h>
 #include "sdm845.dtsi"
 
 #include "pm8998.dtsi"
@@ -562,18 +563,21 @@
 
 	status = "okay";
 
+	pinctrl-names = "default";
+	pinctrl-0 = <&cc_en_active>;
+
 	connector: connector {
 		compatible = "usb-c-connector";
 
-		power-role = "source";
-		data-role = "host";
+		power-role = "dual";
+		data-role = "dual";
 		self-powered;
 		try-power-role = "source";
-		typec-power-opmode = "1.5A";
-		pd-disable;
+		typec-power-opmode = "default";
+		op-sink-microwatt = <1000000>;
 
-		//source-pdos = <PDO_FIXED(5000, 1500,
-		//			 PDO_FIXED_USB_COMM)>;
+		sink-pdos = <PDO_FIXED(5000, 1500, PDO_FIXED_USB_COMM)>;
+		source-pdos = <PDO_FIXED(5000, 1500, PDO_FIXED_USB_COMM)>;
 
 		ports {
 			#address-cells = <1>;
@@ -725,6 +729,14 @@
 			drive-strength = <2>;
 			bias-pull-up;
 		};
+	};
+
+	cc_en_active: cc-en-active-state {
+		pins = "gpio38";          /* adjust if your board uses a different line */
+		function = "gpio";
+		drive-strength = <16>;
+		bias-disable;
+		output-high;              /* or output-low if your board’s gate is active-low */
 	};
 };
 

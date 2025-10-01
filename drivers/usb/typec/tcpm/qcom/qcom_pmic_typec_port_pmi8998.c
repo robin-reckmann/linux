@@ -415,8 +415,101 @@ static const char *rp_sel_to_name(int rp_sel)
 	return rp_sel_name[rp_sel];
 }
 
+/* ---- Debug helpers ---- */
+static inline bool bit_set(u32 v, u32 m) { return !!(v & m); }
+
+static void dump_cfg_bits(struct pmic_typec_port *p, const char *tag)
+{
+	u32 c2 = 0, c3 = 0, cmd = 0, s4 = 0, s5 = 0;
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_CFG_2, &c2);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_CFG_3, &c3);
+	regmap_read(p->regmap, p->base + PMI8998_USBIN_CMD_IL, &cmd);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_4, &s4);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_5, &s5);
+
+	dev_err(p->dev,
+		"%s: CFG2=%02x [Try.SRC=%d RpSrcEn=%d Rp= %s thr1p6=%d], "
+		"CFG3=%02x [Try.SNK=%d TVBUSdb=%d], "
+		"CMD=%02x [SinkAllowed=%d], S4=%02x [ATT=%d VBUS=%d UFP=%d], "
+		"S5=%02x [TrySRCdet=%d TrySNKdet=%d SRCfail=%d SNKfail=%d]\n",
+		tag ? tag : "cfg", (u8)c2,
+		bit_set(c2, PMI8998_EN_TRY_SOURCE_MODE),
+		bit_set(c2, PMI8998_EN_80UA_180UA_CUR_SOURCE),
+		bit_set(c2, PMI8998_TYPE_C_DFP_CURRSRC_MODE) ? "1.5A" : "def",
+		bit_set(c2, PMI8998_DFP_CC_1P4V_OR_1P6V), (u8)c3,
+		bit_set(c3, PMI8998_EN_TRYSINK_MODE),
+		bit_set(c3, PMI8998_TVBUS_DEBOUNCE), (u8)cmd,
+		!bit_set(cmd, PMI8998_USBIN_SUSPEND), (u8)s4,
+		bit_set(s4, PMI8998_CC_ATTACHED),
+		bit_set(s4, PMI8998_TYPEC_VBUS_STATUS),
+		!bit_set(s4, PMI8998_UFP_DFP_MODE_STATUS), (u8)s5,
+		bit_set(s5, PMI8998_TYPEC_TRYSOURCE_DETECT_STATUS),
+		bit_set(s5, PMI8998_TYPEC_TRYSINK_DETECT_STATUS),
+		bit_set(s5, PMI8998_TRY_SOURCE_FAILED),
+		bit_set(s5, PMI8998_TRY_SINK_FAILED));
+}
+
+/* verify update_bits wrote what we expected (mask/value) */
+static void verify_regmask(struct pmic_typec_port *p, u32 off, u32 mask, u32 expect, const char *what)
+{
+	u32 v=0; regmap_read(p->regmap, p->base + off, &v);
+	if ((v & mask) != (expect & mask)) {
+		dev_err(p->dev,
+			"VERIFY FAILED %s @0x%02x: val=%02x mask=%02x want=%02x\n",
+			what, off, (u8)v, (u8)mask, (u8)expect);
+	} else {
+		dev_err(p->dev,
+			"verify ok %s @0x%02x: val=%02x\n",
+			what, off, (u8)v);
+	}
+}
+
+#define VERIFY_UPDATE(_p,_off,_mask,_val,_label) \
+	do { verify_regmask((_p), (_off), (_mask), (_val), (_label)); } while (0)
+
 #define misc_to_cc(msic) !!(misc & PMI8998_CC_ORIENTATION) ? "cc1" : "cc2"
 #define misc_to_vconn(msic) !!(misc & PMI8998_CC_ORIENTATION) ? "cc2" : "cc1"
+
+static inline int rp_sel_from_cc(enum typec_cc_status s)
+{
+	switch (s) {
+	case TYPEC_CC_RP_1_5:
+	case TYPEC_CC_RP_3_0:   /* we only advertise up to 1.5A */
+		return TYPEC_SRC_RP_SEL_180UA;
+	case TYPEC_CC_RP_DEF:
+	default:
+		return TYPEC_SRC_RP_SEL_80UA;
+	}
+}
+
+static inline unsigned int rp_bit_from_cc(enum typec_cc_status s)
+{
+	switch (s) {
+	case TYPEC_CC_RP_1_5:
+	case TYPEC_CC_RP_3_0: return PMI8998_TYPE_C_DFP_CURRSRC_MODE; /* bit7 */
+	default:              return 0; /* Rp-def */
+	}
+}
+
+static void qcom_pmic_typec_dbg_dump(struct pmic_typec_port *p, const char *tag)
+{
+	u32 s1 = 0, s2 = 0, s4 = 0, c2 = 0, c3 = 0, sw = 0, cmd = 0;
+
+	/* Defensive: tolerate read errors without crashing the dump */
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_1, &s1);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_2, &s2);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_4, &s4);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_CFG_2,   &c2);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_CFG_3,   &c3);
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL, &sw);
+	regmap_read(p->regmap, p->base + PMI8998_USBIN_CMD_IL,   &cmd);
+
+	/* Cast to u8 so the %02x formatting is correct/compact */
+	dev_err(p->dev,
+		"%s: C2=%02x C3=%02x SW=%02x CMD=%02x S1=%02x S2=%02x S4=%02x\n",
+		tag ? tag : "dump",
+		(u8)c2, (u8)c3, (u8)sw, (u8)cmd, (u8)s1, (u8)s2, (u8)s4);
+}
 
 static void qcom_pmic_typec_port_cc_debounce(struct work_struct *work)
 {
@@ -428,7 +521,7 @@ static void qcom_pmic_typec_port_cc_debounce(struct work_struct *work)
 	pmic_typec_port->debouncing_cc = false;
 	spin_unlock_irqrestore(&pmic_typec_port->lock, flags);
 
-	dev_dbg(pmic_typec_port->dev, "Debounce cc complete\n");
+	dev_err(pmic_typec_port->dev, "Debounce cc complete\n");
 
 	/*
 	 * When in SRC_TRYWAIT the state machine will call set_cc and then expects
@@ -450,6 +543,7 @@ static irqreturn_t pmic_typec_port_isr(int irq, void *data)
 	int ret;
 	u8 status[6];
 
+	u32 s5=0; regmap_read(pmic_typec_port->regmap, pmic_typec_port->base + PMI8998_TYPE_C_STATUS_5, &s5);
 	spin_lock_irqsave(&pmic_typec_port->lock, flags);
 
 	ret = regmap_bulk_read(pmic_typec_port->regmap,
@@ -474,6 +568,15 @@ done:
 	if (cc_change)
 		tcpm_cc_change(pmic_typec_port->tcpm_port);
 
+	if (s5) {
+		dev_err(pmic_typec_port->dev,
+			"ISR S5=%02x TrySRCdet=%d TrySNKdet=%d SRCfail=%d SNKfail=%d\n",
+			(u8)s5,
+			!!(s5 & PMI8998_TYPEC_TRYSOURCE_DETECT_STATUS),
+			!!(s5 & PMI8998_TYPEC_TRYSINK_DETECT_STATUS),
+			!!(s5 & PMI8998_TRY_SOURCE_FAILED), !!(s5 & PMI8998_TRY_SINK_FAILED));
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -486,7 +589,7 @@ static int qcom_pmic_typec_port_vbus_detect(struct pmic_typec_port *pmic_typec_p
 			  pmic_typec_port->base + PMI8998_TYPE_C_STATUS_4,
 			  &misc);
 	if (ret) {
-		dev_dbg(pmic_typec_port->dev, "Failed to read vbus: %d\n", ret);
+		dev_err(pmic_typec_port->dev, "Failed to read vbus: %d\n", ret);
 		return false;
 	}
 
@@ -546,7 +649,7 @@ static int qcom_pmic_typec_port_set_vbus(struct tcpc_dev *tcpc, bool on, bool si
 	tcpm_vbus_change(tcpm->tcpm_port);
 
 done:
-	dev_dbg(tcpm->dev, "set_vbus set: %d result %d\n", on, ret);
+	dev_err(tcpm->dev, "set_vbus set: %d result %d\n", on, ret);
 	mutex_unlock(&pmic_typec_port->vbus_lock);
 
 	return ret;
@@ -625,10 +728,9 @@ static int qcom_pmic_typec_port_get_cc(struct tcpc_dev *tcpc,
 			break;
 		default:
 			dev_warn(dev, "unexpected snk status %.2x\n", val);
-			val = TYPEC_CC_RP_DEF;
+			val = TYPEC_CC_RP_DEF;     /* keep what we decoded */
 			break;
 		}
-		val = TYPEC_CC_RP_DEF;
 	}
 
 	if (misc & PMI8998_CC_ORIENTATION)
@@ -637,7 +739,7 @@ static int qcom_pmic_typec_port_get_cc(struct tcpc_dev *tcpc,
 		*cc1 = val;
 
 done:
-	dev_dbg(dev, "get_cc: misc 0x%08x cc1 0x%08x %s cc2 0x%08x %s attached %d cc=%s\n",
+	dev_err(dev, "get_cc: misc 0x%08x cc1 0x%08x %s cc2 0x%08x %s attached %d cc=%s\n",
 		misc, *cc1, cc_to_name(*cc1), *cc2, cc_to_name(*cc2), attached,
 		misc_to_cc(misc));
 
@@ -673,7 +775,7 @@ static int qcom_pmic_typec_port_set_cc(struct tcpc_dev *tcpc,
 	if (ret)
 		goto done;
 
-	mode = PMI8998_DFP_EN_CMD;
+	mode = PMI8998_DFP_EN_CMD; /* default to Source unless TYPEC_CC_RD */
 
 	switch (cc) {
 	case TYPEC_CC_OPEN:
@@ -700,16 +802,30 @@ static int qcom_pmic_typec_port_set_cc(struct tcpc_dev *tcpc,
 		goto done;
 	}
 
+	/* When acting as Source, set Rp selection; when Sink, we still write role cmd */
 	if (mode == PMI8998_DFP_EN_CMD) {
-		ret = regmap_write(pmic_typec_port->regmap,
-				   pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
-				   currsrc);
+		ret = regmap_update_bits(pmic_typec_port->regmap,
+			pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
+			PMI8998_TYPE_C_DFP_CURRSRC_MODE |
+			PMI8998_EN_80UA_180UA_CUR_SOURCE,
+			rp_bit_from_cc(cc) |
+			PMI8998_EN_80UA_180UA_CUR_SOURCE);
 		if (ret)
 			goto done;
 
 		/* See debounce handler */
 		pmic_typec_port->src_trywait = true;
 	}
+
+	/* Force role for TCPM-driven phases (clear TYPEC_DISABLE_CMD) */
+	ret = regmap_update_bits(pmic_typec_port->regmap,
+		pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+		PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
+		mode);
+	if (ret)
+		goto done;
+
+	qcom_pmic_typec_dbg_dump(pmic_typec_port, "set_cc");	
 
 	pmic_typec_port->cc = cc;
 	qcom_pmic_set_cc_debounce(pmic_typec_port);
@@ -718,7 +834,7 @@ static int qcom_pmic_typec_port_set_cc(struct tcpc_dev *tcpc,
 done:
 	spin_unlock_irqrestore(&pmic_typec_port->lock, flags);
 
-	dev_dbg(dev, "set_cc: currsrc=%x %s mode %s debounce %d attached %d cc=%s\n",
+	dev_err(dev, "set_cc: currsrc=%x %s mode %s debounce %d attached %d cc=%s\n",
 		currsrc, rp_sel_to_name(currsrc),
 		mode == PMI8998_DFP_EN_CMD ? "EN_SRC_ONLY" : "EN_SNK_ONLY",
 		pmic_typec_port->debouncing_cc, !!(misc & PMI8998_CC_ATTACHED),
@@ -766,59 +882,8 @@ static int qcom_pmic_typec_port_set_vconn(struct tcpc_dev *tcpc, bool on)
 done:
 	spin_unlock_irqrestore(&pmic_typec_port->lock, flags);
 
-	dev_dbg(dev, "set_vconn: orientation %d control 0x%08x state %s cc %s vconn %s\n",
+	dev_err(dev, "set_vconn: orientation %d control 0x%08x state %s cc %s vconn %s\n",
 		orientation, value, on ? "on" : "off", misc_to_vconn(misc), misc_to_cc(misc));
-
-	return ret;
-}
-
-static int qcom_pmic_typec_port_start_toggling(struct tcpc_dev *tcpc,
-					       enum typec_port_type port_type,
-					       enum typec_cc_status cc)
-{
-	struct pmic_typec *tcpm = tcpc_to_tcpm(tcpc);
-	struct pmic_typec_port *pmic_typec_port = tcpm->pmic_typec_port;
-	struct device *dev = pmic_typec_port->dev;
-	unsigned int misc;
-	u8 mode = 0;
-	u32 reg;
-	unsigned long flags;
-	int ret;
-
-	switch (port_type) {
-	case TYPEC_PORT_SRC:
-		mode = PMI8998_DFP_EN_CMD;
-		reg = PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL;
-		break;
-	case TYPEC_PORT_SNK:
-		mode = PMI8998_UFP_EN_CMD;
-		reg = PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL;
-		break;
-	case TYPEC_PORT_DRP:
-		mode = PMI8998_EN_TRYSINK_MODE;
-		reg = PMI8998_TYPE_C_CFG_3;
-		break;
-	}
-
-	spin_lock_irqsave(&pmic_typec_port->lock, flags);
-
-	ret = regmap_read(pmic_typec_port->regmap,
-			  pmic_typec_port->base + PMI8998_TYPE_C_STATUS_4, &misc);
-	if (ret)
-		goto done;
-
-	dev_dbg(dev, "start_toggling: misc 0x%08x attached %d port_type %d current cc %d new %d\n",
-		misc, !!(misc & PMI8998_CC_ATTACHED), port_type, pmic_typec_port->cc, cc);
-
-	qcom_pmic_set_cc_debounce(pmic_typec_port);
-
-	ret = regmap_write(pmic_typec_port->regmap,
-			   pmic_typec_port->base + reg,
-			   mode);
-done:
-	spin_unlock_irqrestore(&pmic_typec_port->lock, flags);
-
-	pmic_typec_port->vbus_high = !!(misc & PMI8998_TYPEC_VBUS_STATUS);
 
 	return ret;
 }
@@ -838,85 +903,285 @@ done:
 	PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN | \
 	PMI8998_TYPEC_TRYSINK_DETECT_INT_EN)
 
-static int qcom_pmic_typec_port_start(struct pmic_typec *tcpm,
-				      struct tcpm_port *tcpm_port)
+static int qcom_pmic_typec_port_start_toggling(struct tcpc_dev *tcpc,
+                                               enum typec_port_type port_type,
+                                               enum typec_cc_status cc)
 {
-	struct pmic_typec_port *pmic_typec_port = tcpm->pmic_typec_port;
+	struct pmic_typec *tcpm = tcpc_to_tcpm(tcpc);
+	struct pmic_typec_port *p = tcpm->pmic_typec_port;
+	struct device *dev = p->dev;
+	unsigned long flags;
+	unsigned int misc = 0;
+	int ret = 0;
+
+	spin_lock_irqsave(&p->lock, flags);
+
+	/* Snapshot + dump before programming */
+	regmap_read(p->regmap, p->base + PMI8998_TYPE_C_STATUS_4, &misc);
+	qcom_pmic_typec_dbg_dump(p, "start_toggling.enter");
+	dump_cfg_bits(p, "start_toggling.cfg.enter");
+
+	switch (port_type) {
+	case TYPEC_PORT_SRC:
+		/* Ensure DRP/Try.* are off */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_2,
+				PMI8998_EN_TRY_SOURCE_MODE, 0);
+		if (ret) break;
+
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_3,
+				PMI8998_EN_TRYSINK_MODE, 0);
+		if (ret) break;
+
+		/* Enable Rp current sources, pick advertised Rp (def/1.5) */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_2,
+				PMI8998_EN_80UA_180UA_CUR_SOURCE,
+				PMI8998_EN_80UA_180UA_CUR_SOURCE);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_2, PMI8998_EN_80UA_180UA_CUR_SOURCE, PMI8998_EN_80UA_180UA_CUR_SOURCE, "SRC RpSrcEn");
+
+		/* Select advertised Rp via bit7; keep rest of CFG_2 intact */
+		ret = regmap_update_bits(p->regmap,
+			p->base + PMI8998_TYPE_C_CFG_2,
+			PMI8998_TYPE_C_DFP_CURRSRC_MODE,
+			rp_bit_from_cc(cc));
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_2, PMI8998_TYPE_C_DFP_CURRSRC_MODE, rp_bit_from_cc(cc), "SRC Rp level");
+
+		/* Keep 1.6V threshold / tPDdebounce = 10–20ms */
+		regmap_update_bits(p->regmap,
+			p->base + PMI8998_TYPE_C_CFG_2,
+			PMI8998_DFP_CC_1P4V_OR_1P6V,
+			PMI8998_DFP_CC_1P4V_OR_1P6V);
+
+		/* Force DFP (source) */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+				PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
+				PMI8998_DFP_EN_CMD);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL, PMI8998_UFP_EN_CMD|PMI8998_DFP_EN_CMD|PMI8998_TYPEC_DISABLE_CMD, PMI8998_DFP_EN_CMD, "SRC force DFP");
+
+		dev_err(dev, "start_toggling: SRC, Rp=%d\n", rp_sel_from_cc(cc));
+		break;
+
+	case TYPEC_PORT_SNK:
+		/* Ensure DRP/Try.* are off */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_2,
+				PMI8998_EN_TRY_SOURCE_MODE, 0);
+		if (ret) break;
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_3,
+				PMI8998_EN_TRYSINK_MODE, 0);
+		if (ret) break;
+
+		/* Optionally turn Rp current sources off while pure sink */
+		regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_CFG_2,
+				PMI8998_EN_80UA_180UA_CUR_SOURCE, 0);
+
+		/* Allow sinking current (don’t suspend USBIN) */
+		regmap_update_bits(p->regmap,
+				p->base + PMI8998_USBIN_CMD_IL,
+				PMI8998_USBIN_SUSPEND, 0);
+
+		/* Force UFP (sink) */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+				PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
+				PMI8998_UFP_EN_CMD);
+		if (ret) break;
+
+		dev_err(dev, "start_toggling: SNK\n");
+		break;
+
+	case TYPEC_PORT_DRP: {
+		bool try_src;
+
+		/* Bias DRP based on cc hint: Rp* -> Try.SRC, otherwise Try.SNK */
+		switch (cc) {
+		case TYPEC_CC_RP_DEF:
+		case TYPEC_CC_RP_1_5:
+		case TYPEC_CC_RP_3_0:
+			try_src = true;
+			break;
+		default:
+			try_src = false;
+			break;
+		}
+
+		/* Clear any forced role first */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+				PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
+				0);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL, PMI8998_UFP_EN_CMD|PMI8998_DFP_EN_CMD|PMI8998_TYPEC_DISABLE_CMD, 0, "DRP clear forced role");
+
+		/* Enable useful Type-C IRQs */
+		ret = regmap_update_bits(p->regmap,
+				p->base + PMI8998_TYPE_C_INTRPT_ENB,
+				TYPEC_INTR_ENB_MASK, TYPEC_INTR_ENB_MASK);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_INTRPT_ENB, TYPEC_INTR_ENB_MASK, TYPEC_INTR_ENB_MASK, "DRP intr en");
+
+		/* TVBUS debounce + Try.* detect IRQs + pick Try.SNK bit (if not Try.SRC) */
+		ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_3,
+			PMI8998_TVBUS_DEBOUNCE |
+			PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
+			PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
+			PMI8998_EN_TRYSINK_MODE |
+			PMI8998_EN_LEGACY_CABLE_DETECTION,
+			PMI8998_TVBUS_DEBOUNCE |
+			PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
+			PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
+			PMI8998_EN_TRYSINK_MODE /* <-- don’t clear this */);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_3, 
+			PMI8998_TVBUS_DEBOUNCE|PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN|PMI8998_TYPEC_TRYSINK_DETECT_INT_EN|PMI8998_EN_TRYSINK_MODE, 
+			PMI8998_TVBUS_DEBOUNCE|PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN|PMI8998_TYPEC_TRYSINK_DETECT_INT_EN|PMI8998_EN_TRYSINK_MODE, "DRP CFG3 Try.SNK+IRQs");
+
+		/* Select Try.SRC (or clear it) + enable Rp sources + set CC threshold */
+		ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_2,
+			PMI8998_EN_TRY_SOURCE_MODE |
+			PMI8998_EN_80UA_180UA_CUR_SOURCE |
+			PMI8998_DFP_CC_1P4V_OR_1P6V,
+			PMI8998_EN_TRY_SOURCE_MODE |
+			PMI8998_EN_80UA_180UA_CUR_SOURCE |
+			PMI8998_DFP_CC_1P4V_OR_1P6V);
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_2,
+			PMI8998_EN_TRY_SOURCE_MODE|PMI8998_EN_80UA_180UA_CUR_SOURCE|PMI8998_DFP_CC_1P4V_OR_1P6V,
+			PMI8998_EN_TRY_SOURCE_MODE|PMI8998_EN_80UA_180UA_CUR_SOURCE|PMI8998_DFP_CC_1P4V_OR_1P6V, "DRP CFG2 Try.SRC+RpSrc+thr");
+ 
+
+		/* Rp level we’ll advertise in the source half of DRP (bit7 only) */
+		ret = regmap_update_bits(p->regmap,
+			p->base + PMI8998_TYPE_C_CFG_2,
+			PMI8998_TYPE_C_DFP_CURRSRC_MODE,
+			rp_bit_from_cc(cc));
+		if (ret) break;
+		VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_2, PMI8998_TYPE_C_DFP_CURRSRC_MODE, rp_bit_from_cc(cc), "DRP Rp level");
+
+		/* Ensure we can draw if we end up Sink */
+		regmap_update_bits(p->regmap,
+				p->base + PMI8998_USBIN_CMD_IL,
+				PMI8998_USBIN_SUSPEND, 0);
+
+		dev_dbg(dev, "start_toggling: DRP bias=%s (cc=%d)\n",
+			try_src ? "Try.SRC" : "Try.SNK", cc);
+		break;
+	}
+	}
+
+	/* Dump after programming */
+	qcom_pmic_typec_dbg_dump(p, "start_toggling.exit");
+	dump_cfg_bits(p, "start_toggling.cfg.exit");	
+
+	/* Keep your existing debounce behavior */
+	qcom_pmic_set_cc_debounce(p);
+
+	p->vbus_high = !!(misc & PMI8998_TYPEC_VBUS_STATUS);
+	spin_unlock_irqrestore(&p->lock, flags);
+	return ret;
+}
+
+static int qcom_pmic_typec_port_start(struct pmic_typec *tcpm,
+                                      struct tcpm_port *tcpm_port)
+{
+	struct pmic_typec_port *p = tcpm->pmic_typec_port;
 	int ret;
 
-	/* Configure interrupt sources */
-	ret = regmap_write(pmic_typec_port->regmap,
-			   pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB,
+	/* --- Snapshot before we touch anything --- */
+	qcom_pmic_typec_dbg_dump(p, "port_start.enter");
+	dump_cfg_bits(p, "port_start.cfg.enter");
+
+	/* 1) Enable Type-C/USB IRQs the driver relies on */
+	ret = regmap_write(p->regmap, p->base + PMI8998_TYPE_C_INTRPT_ENB,
 			   TYPEC_INTR_ENB_MASK);
 	if (ret)
 		goto done;
 
-	/* VCONN under SW control; start with value=0 */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
-	                         PMI8998_VCONN_EN_SRC | PMI8998_VCONN_EN_VALUE,
-	                         PMI8998_VCONN_EN_SRC);
-	if (ret) goto done;
+	/* 2) Don’t force a role in SW; let DRP HW + Try.* take over */
+	ret = regmap_update_bits(
+		p->regmap, p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+		PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD |
+			PMI8998_TYPEC_DISABLE_CMD,
+		0);
+	if (ret)
+		goto done;
 
-	/* Pure Type-C behavior: disable APSD/factory bits */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG,
-	                         PMI8998_APSD_START_ON_CC |
-	                         PMI8998_WAIT_FOR_APSD |
-	                         PMI8998_FACTORY_MODE_DETECTION_EN |
-	                         PMI8998_VCONN_OC_CFG,
-	                         0);
-	if (ret) goto done;
+	/* 3) Configure DRP bias = Try.SRC.
+     *    - Set EN_TRY_SOURCE_MODE in CFG_2
+     *    - Make sure EN_TRYSINK_MODE is *cleared* in CFG_3
+     *    - Keep TVBUS debounce and Try.* detect IRQ enables
+     */
+	ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_2,
+				 PMI8998_EN_TRY_SOURCE_MODE, /* mask */
+				 PMI8998_EN_TRY_SOURCE_MODE); /* value */
+	if (ret)
+		goto done;
+	VERIFY_UPDATE(p, PMI8998_TYPE_C_CFG_2, PMI8998_EN_TRY_SOURCE_MODE, PMI8998_EN_TRY_SOURCE_MODE, "port_start Try.SRC");
 
-	/* Don’t enable USBIN source-change IRQs here */
-	ret = regmap_write(pmic_typec_port->regmap,
-	                   pmic_typec_port->base + PMI8998_USBIN_SOURCE_CHANGE_INTRPT_ENB, 0x00);
-	if (ret) goto done;
+	/* Allow DRP Sink phase too (don’t block Try.SNK) + keep debounce & detect IRQs */
+	ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_3,
+		PMI8998_TVBUS_DEBOUNCE |
+		PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
+		PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
+		PMI8998_EN_TRYSINK_MODE |
+		PMI8998_EN_LEGACY_CABLE_DETECTION,
+		PMI8998_TVBUS_DEBOUNCE |
+		PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
+		PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
+		PMI8998_EN_TRYSINK_MODE /* <-- enable Try.SNK */);
+	if (ret)
+		goto done;
+	VERIFY_UPDATE(p,PMI8998_TYPE_C_CFG_3,PMI8998_EN_TRYSINK_MODE,PMI8998_EN_TRYSINK_MODE,"port_start Try.SNK (should be 1)");
 
-	/* Force DFP (source) – no DRP / try-sink */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
-	                         PMI8998_UFP_EN_CMD | PMI8998_DFP_EN_CMD | PMI8998_TYPEC_DISABLE_CMD,
-	                         PMI8998_DFP_EN_CMD);
-	if (ret) goto done;
+	/* 4) Advertise Rp when you’re the Source side of DRP */
+	ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_2,
+				 PMI8998_EN_80UA_180UA_CUR_SOURCE,
+				 PMI8998_EN_80UA_180UA_CUR_SOURCE);
+	if (ret)
+		goto done;
 
-	/* Keep only TVBUS debounce in CFG_3; no Try.* */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_3,
-	                         PMI8998_TVBUS_DEBOUNCE |
-	                         PMI8998_TYPEC_TRYSOURCE_DETECT_INT_EN |
-	                         PMI8998_TYPEC_TRYSINK_DETECT_INT_EN |
-	                         PMI8998_EN_TRYSINK_MODE |
-	                         PMI8998_EN_LEGACY_CABLE_DETECTION,
-	                         PMI8998_TVBUS_DEBOUNCE);
-	if (ret) goto done;
+	/* 5) Keep CC threshold/tPDdebounce suitable for attach detection */
+	ret = regmap_update_bits(p->regmap, p->base + PMI8998_TYPE_C_CFG_2,
+				 PMI8998_DFP_CC_1P4V_OR_1P6V,
+				 PMI8998_DFP_CC_1P4V_OR_1P6V);
+	if (ret)
+		goto done;
 
-	/* Enable 80uA/180uA current sources (advertise Rp) */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
-	                         PMI8998_EN_80UA_180UA_CUR_SOURCE,
-	                         PMI8998_EN_80UA_180UA_CUR_SOURCE);
-	if (ret) goto done;
+	/* 6) Allow sinking if the attach race ends up as Sink (against fixed Rp).
+     *    (If you *must* forbid sinking during Try.SRC, set USBIN_SUSPEND instead.)
+     */
+	ret = regmap_update_bits(p->regmap, p->base + PMI8998_USBIN_CMD_IL,
+				 PMI8998_USBIN_SUSPEND,
+				 0); /* clear suspend -> sink path allowed */
+	if (ret)
+		goto done;
 
-	/* CC threshold = 1.6 V (tPDdebounce ~10–20 ms) */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_TYPE_C_CFG_2,
-	                         PMI8998_DFP_CC_1P4V_OR_1P6V,
-	                         PMI8998_DFP_CC_1P4V_OR_1P6V);
-	if (ret) goto done;
+	/* 7) Put VCONN under SW control (we’ll switch it on when tcpm asks) */
+	ret = regmap_write(p->regmap,
+			   p->base + PMI8998_TYPE_C_INTRPT_ENB_SOFTWARE_CTRL,
+			   PMI8998_VCONN_EN_SRC);
+	if (ret)
+		goto done;
 
-	/* Suspend the sink path so we never draw from USBIN */
-	ret = regmap_update_bits(pmic_typec_port->regmap,
-	                         pmic_typec_port->base + PMI8998_USBIN_CMD_IL,
-	                         PMI8998_USBIN_SUSPEND,
-	                         PMI8998_USBIN_SUSPEND);
-	if (ret) goto done;
+	/* Final snapshot after programming */
+	qcom_pmic_typec_dbg_dump(p, "port_start.exit.trysrc");
+	dump_cfg_bits(p, "port_start.cfg.exit.trysrc");
 
-	pmic_typec_port->tcpm_port = tcpm_port;
-	enable_irq(pmic_typec_port->irq);
+	p->tcpm_port = tcpm_port;
+	enable_irq(p->irq);
+	return 0;
 
 done:
-	return ret;
+    qcom_pmic_typec_dbg_dump(p, "port_start.ERROR");
+    return ret;
 }
 
 static void qcom_pmic_typec_port_stop(struct pmic_typec *tcpm)
@@ -937,23 +1202,35 @@ int qcom_pmic_typec_port_probe_pmi8998(struct platform_device *pdev,
 	struct pmic_typec_port *pmic_typec_port;
 	int ret, irq;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	pmic_typec_port = devm_kzalloc(dev, sizeof(*pmic_typec_port), GFP_KERNEL);
 	if (!pmic_typec_port)
 		return -ENOMEM;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	if (!res->nr_irqs || res->nr_irqs > PMIC_TYPEC_MAX_IRQS)
 		return -EINVAL;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	irq_data = devm_kzalloc(dev, sizeof(*irq_data) * res->nr_irqs,
 				GFP_KERNEL);
 	if (!irq_data)
 		return -ENOMEM;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	mutex_init(&pmic_typec_port->vbus_lock);
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	pmic_typec_port->vdd_vbus = devm_regulator_get(dev, "vdd-vbus");
 	if (IS_ERR(pmic_typec_port->vdd_vbus))
 		return PTR_ERR(pmic_typec_port->vdd_vbus);
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	pmic_typec_port->dev = dev;
 	pmic_typec_port->base = base;
@@ -962,14 +1239,20 @@ int qcom_pmic_typec_port_probe_pmi8998(struct platform_device *pdev,
 	INIT_DELAYED_WORK(&pmic_typec_port->cc_debounce_dwork,
 			  qcom_pmic_typec_port_cc_debounce);
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
 		return irq;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	ret = devm_request_threaded_irq(dev, irq, NULL, pmic_typec_port_isr,
 					IRQF_ONESHOT | IRQF_NO_AUTOEN,
 					"type-c-change",
 					pmic_typec_port);
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	pmic_typec_port->irq = irq;
 	tcpm->pmic_typec_port = pmic_typec_port;

@@ -25,8 +25,8 @@
 #include "qcom_pmic_typec_port.h"
 
 struct pmic_typec_resources {
-	const struct pmic_typec_pdphy_resources	*pdphy_res;
-	const struct pmic_typec_port_resources	*port_res;
+	const struct pmic_typec_pdphy_resources *pdphy_res;
+	const struct pmic_typec_port_resources *port_res;
 };
 
 static int qcom_pmic_typec_init(struct tcpc_dev *tcpc)
@@ -66,29 +66,42 @@ static int qcom_pmic_typec_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
+
 	if (device_is_compatible(dev, "qcom,pmi8998-typec"))
-		ret = qcom_pmic_typec_port_probe_pmi8998(pdev, tcpm,
-							 res->port_res, regmap, base);
+		ret = qcom_pmic_typec_port_probe_pmi8998(
+			pdev, tcpm, res->port_res, regmap, base);
 	else
-		ret = qcom_pmic_typec_port_probe(pdev, tcpm,
-						 res->port_res, regmap, base);
+		ret = qcom_pmic_typec_port_probe(pdev, tcpm, res->port_res,
+						 regmap, base);
 	if (ret)
 		return ret;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
+
 	if (res->pdphy_res) {
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__,
+		       __LINE__);
 		ret = of_property_read_u32_index(np, "reg", 1, &base);
 		if (ret)
 			return ret;
 
-		ret = qcom_pmic_typec_pdphy_probe(pdev, tcpm,
-						  res->pdphy_res, regmap, base);
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__,
+		       __LINE__);
+
+		ret = qcom_pmic_typec_pdphy_probe(pdev, tcpm, res->pdphy_res,
+						  regmap, base);
 		if (ret)
 			return ret;
 	} else {
+		printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__,
+		       __LINE__);
 		ret = qcom_pmic_typec_pdphy_stub_probe(pdev, tcpm);
 		if (ret)
 			return ret;
 	}
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
 
 	platform_set_drvdata(pdev, tcpm);
 
@@ -96,11 +109,16 @@ static int qcom_pmic_typec_probe(struct platform_device *pdev)
 	if (!tcpm->tcpc.fwnode)
 		return -EINVAL;
 
-	bridge_dev = devm_drm_dp_hpd_bridge_alloc(tcpm->dev, to_of_node(tcpm->tcpc.fwnode));
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
+
+	bridge_dev = devm_drm_dp_hpd_bridge_alloc(
+		tcpm->dev, to_of_node(tcpm->tcpc.fwnode));
 	if (IS_ERR(bridge_dev)) {
 		ret = PTR_ERR(bridge_dev);
 		goto fwnode_remove;
 	}
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
 
 	tcpm->tcpm_port = tcpm_register_port(tcpm->dev, &tcpm->tcpc);
 	if (IS_ERR(tcpm->tcpm_port)) {
@@ -108,17 +126,25 @@ static int qcom_pmic_typec_probe(struct platform_device *pdev)
 		goto fwnode_remove;
 	}
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
+
 	ret = tcpm->port_start(tcpm, tcpm->tcpm_port);
 	if (ret)
 		goto port_unregister;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
 
 	ret = tcpm->pdphy_start(tcpm, tcpm->tcpm_port);
 	if (ret)
 		goto port_stop;
 
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
+
 	ret = devm_drm_dp_hpd_bridge_add(tcpm->dev, bridge_dev);
 	if (ret)
 		goto pdphy_stop;
+
+	printk(KERN_ALERT "DEBUG: Passed %s %d \n", __FUNCTION__, __LINE__);
 
 	return 0;
 
@@ -160,12 +186,11 @@ static const struct pmic_typec_resources pmi8998_typec_res = {
 	.port_res = &pm8150b_port_res,
 };
 
-
 static const struct of_device_id qcom_pmic_typec_table[] = {
 	{ .compatible = "qcom,pm8150b-typec", .data = &pm8150b_typec_res },
 	{ .compatible = "qcom,pmi632-typec", .data = &pmi632_typec_res },
 	{ .compatible = "qcom,pmi8998-typec", .data = &pmi8998_typec_res },
-	{ }
+	{}
 };
 MODULE_DEVICE_TABLE(of, qcom_pmic_typec_table);
 

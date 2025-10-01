@@ -209,7 +209,7 @@ qcom_pmic_typec_pdphy_pd_transmit_signal(struct pmic_typec_pdphy *pmic_typec_pdp
 done:
 	spin_unlock_irqrestore(&pmic_typec_pdphy->lock, flags);
 
-	dev_vdbg(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\n",
+	dev_err(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\n",
 		 type, negotiated_rev, ret);
 
 	return ret;
@@ -319,7 +319,7 @@ static int qcom_pmic_typec_pdphy_pd_transmit(struct tcpc_dev *tcpc,
 	}
 
 	if (ret)
-		dev_dbg(dev, "pd_transmit: type %x result %d\n", type, ret);
+		dev_err(dev, "pd_transmit: type %x result %d\n", type, ret);
 
 	return ret;
 }
@@ -341,7 +341,7 @@ static void qcom_pmic_typec_pdphy_pd_receive(struct pmic_typec_pdphy *pmic_typec
 
 	/* Hardware requires +1 of the real read value to be passed */
 	if (size < 1 || size > sizeof(msg.payload) + 1) {
-		dev_dbg(dev, "pd_receive: invalid size %d\n", size);
+		dev_err(dev, "pd_receive: invalid size %d\n", size);
 		goto done;
 	}
 
@@ -367,7 +367,7 @@ done:
 	spin_unlock_irqrestore(&pmic_typec_pdphy->lock, flags);
 
 	if (!ret) {
-		dev_vdbg(dev, "pd_receive: handing %d bytes to tcpm\n", size);
+		dev_err(dev, "pd_receive: handing %d bytes to tcpm\n", size);
 		tcpm_pd_receive(pmic_typec_pdphy->tcpm_port, &msg, TCPC_TX_SOP);
 	}
 }
@@ -419,7 +419,7 @@ static int qcom_pmic_typec_pdphy_set_pd_rx(struct tcpc_dev *tcpc, bool on)
 
 	spin_unlock_irqrestore(&pmic_typec_pdphy->lock, flags);
 
-	dev_dbg(pmic_typec_pdphy->dev, "set_pd_rx: %s\n", str_on_off(on));
+	dev_err(pmic_typec_pdphy->dev, "set_pd_rx: %s\n", str_on_off(on));
 
 	return ret;
 }
@@ -445,7 +445,7 @@ static int qcom_pmic_typec_pdphy_set_roles(struct tcpc_dev *tcpc, bool attached,
 
 	spin_unlock_irqrestore(&pmic_typec_pdphy->lock, flags);
 
-	dev_dbg(dev, "pdphy_set_roles: data_role_host=%d power_role_src=%d\n",
+	dev_err(dev, "pdphy_set_roles: data_role_host=%d power_role_src=%d\n",
 		data_role, power_role);
 
 	return ret;
