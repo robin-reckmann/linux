@@ -593,18 +593,28 @@
 	vdd-pdphy-supply = <&vreg_l24a_3p075>;
 	vdd-vbus-supply = <&pmi8998_vbus>;
 
+	pinctrl-names = "default";
+	pinctrl-0 = <&cc_en_active>;
+
 	status = "okay";
 
 	connector {
 		compatible = "usb-c-connector";
 
-		power-role = "source";
+		power-role = "dual";
 		data-role = "dual";
 		self-powered;
 		try-power-role = "source";
 		op-sink-microwatt = <5000000>;
 
+		pd-revision = /bits/ 8 <0x2 0x0 0x1 0x2>;
+
 		source-pdos = <PDO_FIXED(5000, 1500,
+					 PDO_FIXED_DUAL_ROLE |
+					 PDO_FIXED_USB_COMM |
+					 PDO_FIXED_DATA_SWAP)>;
+
+		sink-pdos = <PDO_FIXED(5000, 1500,
 					 PDO_FIXED_DUAL_ROLE |
 					 PDO_FIXED_USB_COMM |
 					 PDO_FIXED_DATA_SWAP)>;
@@ -749,6 +759,14 @@
 };
 
 &tlmm {
+	cc_en_active: cc-en-active-state {
+		pins = "gpio38";
+		function = "gpio";
+		drive-strength = <16>;
+		bias-disable;
+		output-high;
+	};
+
 	pcie1_default_state: pcie1-default-state {
 		clkreq-pins {
 			pins = "gpio103";
