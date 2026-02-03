@@ -344,6 +344,31 @@
 			   <GCC_LPASS_SWAY_CLK>;
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	clock-frequency = <400000>;
+
+	lsm6ds3tr-c@6a {
+		compatible = "st,lsm6ds3tr-c";
+		reg = <0x6a>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <84 IRQ_TYPE_EDGE_RISING>;
+
+		vdd-supply = <&vreg_l19a_3p0>;
+		vddio-supply = <&vreg_lvs1a_1p8>;
+	};
+
+};
+
+&qupv3_id_0 {
+	status = "okay";
+};
+
 &mss_pil {
 	status = "okay";
 	firmware-name = "qcom/sdm845/mba.mbn", "qcom/sdm845/modem_nm.mbn";
