@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright (c) 2026 Robin Reckmann <robin.reckmann@gmail.com>
 
+#include <linux/ctype.h>
 #include <linux/backlight.h>
 #include <linux/delay.h>
+#include <linux/fs.h>
 #include <linux/gpio/consumer.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/regulator/consumer.h>
+#include <linux/slab.h>
 
 #include <video/mipi_display.h>
 
@@ -15,6 +18,9 @@
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
 
+#define GAMMA_POINTS 25
+#define GAMMA_PATH "/persist/comma/dwo_gamma_curves"
+
 struct commaai_bantian {
 	struct drm_panel panel;
 	struct mipi_dsi_device *dsi;
@@ -22,12 +28,163 @@ struct commaai_bantian {
 	struct regulator *vddio;
 	struct regulator *vdd;
 	enum drm_panel_orientation orientation;
+	bool gamma_loaded;
+	bool have_gamma;
+	u16 gamma[3][GAMMA_POINTS];
+};
+
+static void dcs_write_u8_pair(struct mipi_dsi_multi_context *ctx, u8 reg,
+			      u8 val)
+{
+	u8 buf[2] = { reg, val };
+	mipi_dsi_dcs_write_buffer_multi(ctx, buf, sizeof(buf));
+}
+
+static const u8 gamma_addr[3][GAMMA_POINTS][2] = {
+	/* R */
+	{
+		{ 0x00, 0x01 }, { 0x02, 0x03 }, { 0x04, 0x05 }, { 0x06, 0x07 },
+		{ 0x08, 0x09 }, { 0x0A, 0x0B }, { 0x0C, 0x0D }, { 0x0E, 0x0F },
+		{ 0x10, 0x11 }, { 0x12, 0x13 }, { 0x14, 0x15 }, { 0x16, 0x17 },
+		{ 0x18, 0x19 }, { 0x1A, 0x1B }, { 0x1C, 0x1D }, { 0x1E, 0x1F },
+		{ 0x20, 0x21 }, { 0x22, 0x23 }, { 0x24, 0x25 }, { 0x26, 0x27 },
+		{ 0x28, 0x29 }, { 0x2A, 0x2B }, { 0x2D, 0x2F }, { 0x30, 0x31 },
+		{ 0x32, 0x33 },
+	},
+	/* G */
+	{
+		{ 0x34, 0x35 }, { 0x36, 0x37 }, { 0x38, 0x39 }, { 0x3A, 0x3B },
+		{ 0x3D, 0x3F }, { 0x40, 0x41 }, { 0x42, 0x43 }, { 0x44, 0x45 },
+		{ 0x46, 0x47 }, { 0x48, 0x49 }, { 0x4A, 0x4B }, { 0x4C, 0x4D },
+		{ 0x4E, 0x4F }, { 0x50, 0x51 }, { 0x52, 0x53 }, { 0x54, 0x55 },
+		{ 0x56, 0x58 }, { 0x59, 0x5A }, { 0x5B, 0x5C }, { 0x5D, 0x5E },
+		{ 0x5F, 0x60 }, { 0x61, 0x62 }, { 0x63, 0x64 }, { 0x65, 0x66 },
+		{ 0x67, 0x68 },
+	},
+	/* B */
+	{
+		{ 0x69, 0x6A }, { 0x6B, 0x6C }, { 0x6D, 0x6E }, { 0x6F, 0x70 },
+		{ 0x71, 0x72 }, { 0x73, 0x74 }, { 0x75, 0x76 }, { 0x77, 0x78 },
+		{ 0x79, 0x7A }, { 0x7B, 0x7C }, { 0x7D, 0x7E }, { 0x7F, 0x80 },
+		{ 0x81, 0x82 }, { 0x83, 0x84 }, { 0x85, 0x86 }, { 0x87, 0x88 },
+		{ 0x89, 0x8A }, { 0x8B, 0x8C }, { 0x8D, 0x8E }, { 0x8F, 0x90 },
+		{ 0x91, 0x92 }, { 0x93, 0x94 }, { 0x95, 0x96 }, { 0x97, 0x98 },
+		{ 0x99, 0x9A },
+	},
 };
 
 static inline struct commaai_bantian *
 to_commaai_bantian(struct drm_panel *panel)
 {
 	return container_of(panel, struct commaai_bantian, panel);
+}
+
+static int commaai_bantian_load_gamma(struct commaai_bantian *ctx)
+{
+	struct file *f;
+	loff_t pos = 0;
+	char *buf, *p, *end;
+	ssize_t n;
+	int c = 0, i = 0;
+	int ret = 0;
+
+	if (ctx->gamma_loaded)
+		return ctx->have_gamma ? 0 : -ENOENT;
+
+	ctx->gamma_loaded = true;
+	ctx->have_gamma = false;
+
+	f = filp_open(GAMMA_PATH, O_RDONLY, 0);
+	if (IS_ERR(f))
+		return PTR_ERR(f);
+
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out_close;
+	}
+
+	n = kernel_read(f, buf, PAGE_SIZE - 1, &pos);
+	if (n < 0) {
+		ret = (int)n;
+		goto out_free;
+	}
+	buf[n] = '\0';
+
+	p = buf;
+	while (*p && c < 3) {
+		while (*p && isspace(*p))
+			p++;
+		if (!*p)
+			break;
+
+		{
+			unsigned long v = simple_strtoul(p, &end, 16);
+
+			if (end == p) {
+				while (*p && !isspace(*p))
+					p++;
+				continue;
+			}
+
+			if (v > 0xFFFF) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+
+			ctx->gamma[c][i++] = (u16)v;
+			p = end;
+
+			if (i == GAMMA_POINTS) {
+				c++;
+				i = 0;
+			}
+		}
+	}
+
+	if (c != 3) {
+		dev_warn(ctx->dsi->dev.parent ? ctx->dsi->dev.parent :
+						&ctx->dsi->dev,
+			 "gamma file malformed, expected 3x%d hex values\n",
+			 GAMMA_POINTS);
+		ret = -EINVAL;
+		goto out_free;
+	}
+
+	ctx->have_gamma = true;
+	ret = 0;
+
+out_free:
+	kfree(buf);
+out_close:
+	filp_close(f, NULL);
+	return ret;
+}
+
+static int commaai_bantian_apply_gamma(struct commaai_bantian *ctx)
+{
+	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
+	int c, i;
+
+	if (!ctx->have_gamma)
+		return 0;
+
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xFE, 0xA2);
+
+	for (c = 0; c < 3; c++) {
+		for (i = GAMMA_POINTS - 1; i >= 0; i--) {
+			u16 val = ctx->gamma[c][i];
+			u8 msb = gamma_addr[c][i][0];
+			u8 lsb = gamma_addr[c][i][1];
+
+			dcs_write_u8_pair(&dsi_ctx, msb, (val >> 8) & 0xff);
+			dcs_write_u8_pair(&dsi_ctx, lsb, val & 0xff);
+		}
+	}
+
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xFE, 0xA0);
+
+	return dsi_ctx.accum_err;
 }
 
 static void commaai_bantian_reset(struct commaai_bantian *ctx)
@@ -113,6 +270,15 @@ static int commaai_bantian_prepare(struct drm_panel *panel)
 		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 		commaai_bantian_power_off(ctx);
 		return ret;
+	}
+
+	ret = commaai_bantian_load_gamma(ctx);
+	if (ret == 0) {
+		ret = commaai_bantian_apply_gamma(ctx);
+		if (ret < 0)
+			dev_warn(dev, "Failed to apply gamma: %d\n", ret);
+	} else {
+		dev_dbg(dev, "No gamma calibration (%d)\n", ret);
 	}
 
 	return 0;
