@@ -105,6 +105,16 @@ config DRM_PANEL_BOE_TV101WUM_LL2
 	  Say Y here if you want to support for BOE TV101WUM-LL2
 	  WUXGA PANEL DSI Video Mode panel
 
+config DRM_PANEL_COMMAAI_BANTIAN
+   tristate "COMMAAI BANTIAN panel"
+   depends on OF
+   depends on DRM_MIPI_DSI
+   depends on BACKLIGHT_CLASS_DEVICE
+   select VIDEOMODE_HELPERS
+   help
+     Say Y here if you want to enable support for the COMMAAI BANTIAN
+     panel.
+
 config DRM_PANEL_EBBG_FT8719
 	tristate "EBBG FT8719 panel driver"
 	depends on OF
