@@ -220,6 +220,7 @@ static int sdm845_snd_hw_params(struct snd_pcm_substream *substream,
 		break;
 	case QUATERNARY_MI2S_RX:
 	case SECONDARY_MI2S_RX:
+	case SECONDARY_MI2S_TX:
 		break;
 	default:
 		pr_err("%s: invalid dai id 0x%x\n", __func__, cpu_dai->id);
