@@ -705,6 +705,10 @@
 	};
 };
 
+&uart3 {
+	status = "okay";
+};
+
 &uart9 {
 	status = "okay";
 };
